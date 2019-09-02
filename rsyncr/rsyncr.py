@@ -1,7 +1,8 @@
-# A highly useful rsync wrapper that does the heavy lifting to support humans in detecting dangerous changes to a folder structure synchronization.
-# The script highlights the main changes and detects potential unwanted file deletions, while hinting to moved files that might correspond to a folder rename or move
+# A supporting rsync wrapper that does the heavy lifting to support humans in detecting dangerous changes to a folder structure synchronization.
+# The script highlights the main changes and detects potential unwanted file deletions, while hinting to moved files that might correspond to a folder rename or move.
+# TODO --info=progress2 -h (without -v) to show life transfer speed
 
-# RSYNC status output explanation:
+# rsync status output explanation:
 #   Source: https://stackoverflow.com/questions/4493525/rsync-what-means-the-f-on-rsync-logs
 #   1: > received,  . unchanged or modified (cf. below), c local change, * message, e.g. deleted, h hardlink, * = message following (no path)
 #   2: f file, d directory, L symlink, D device, S special
@@ -33,10 +34,7 @@
 
 
 # Standard modules
-import collections
-import os
-import subprocess
-import sys
+import collections, os, subprocess, sys
 
 
 # Constants
@@ -54,6 +52,7 @@ FileState = collections.namedtuple("FileState", ["state", "type", "change", "pat
 def xany(pred, lizt): return reduce(lambda a, b: a or pred(b), lizt if hasattr(lizt, '__iter__') else list(lizt), False)
 def xall(pred, lizt): return reduce(lambda a, b: a and pred(b), lizt if hasattr(lizt, '__iter__') else list(lizt), True)
 
+
 # Conditional function definition for cygwin under Windows
 if sys.platform == 'win32':  # this assumes that the rsync for windows build is using cygwin internals
   def cygwinify(path):
@@ -66,6 +65,7 @@ if sys.platform == 'win32':  # this assumes that the rsync for windows build is 
     return p[:-1] if p[-1] == "/" else p
 else:
   def cygwinify(path): return path[:-1] if path[-1] == "/" else path
+
 
 def parseLine(line):
   ''' Parse one rsync item.
@@ -92,8 +92,17 @@ def parseLine(line):
   except: raise Exception("Wrong path prefix: %s vs %s " % (path, cwdParent))
   return FileState(state, entry, change, path[len(cwdParent):], newdir)
 
-def getCommand(simulate):  # -m prune empty dir chains from file list  -I copy even if size/mtime match
+
+def constructCommand(simulate, stats = False):  # -m prune empty dir chains from file list  -I copy even if size/mtime match
   ''' Warning: Consults global variables. '''
+  if stats:  # TODO not accutrate as missing ignores etc,
+    return '"%s"' % rsyncPath + "-n --stats %s%s '%s' '%s'" % (
+        "-r " if not flat and not file else "",
+        "--ignore-existing " if add else ("-I " if override else "-u "),
+        source,
+        target
+      )
+
   return '"%s"' % rsyncPath + " %s%s%s%s%s%s%s -i -t --exclude=.redundir/ --exclude=$RECYCLE.BIN/ --exclude='System Volume Information' --filter='P .redundir' --filter='P $RECYCLE.BIN' --filter='P System Volume Information' '%s' '%s'" % (  # -t keep times, -i itemize
       "-n " if simulate else "",
       "-r " if not flat and not file else "",
@@ -109,7 +118,7 @@ def getCommand(simulate):  # -m prune empty dir chains from file list  -I copy e
 
 # Main script code
 if __name__ == '__main__':
-  if len(sys.argv) < 2 or '--help' in sys.argv or '-' in sys.argv: print("""rsyncr  (C) Arne Bachmann 2017-2018
+  if len(sys.argv) < 2 or '--help' in sys.argv or '-' in sys.argv: print("""rsyncr  (C) Arne Bachmann 2017-2019
     This rsync-wrapper simplifies backing up the current directory tree.
 
     Syntax:  rsyncr <target-path> [options]
@@ -126,6 +135,7 @@ if __name__ == '__main__':
       --file <file path>       Transfer a single local file instead of synchronizing a folder
       --user <user name>   -u  Manual remote user name specification, unless using user@host notation
       --force-copy             Force writing over existing files
+      --estimate               Estimate copy speed
 
     Generic options:
       --flat       -1  Don't recurse into sub folders, only copy current folder
@@ -147,6 +157,7 @@ if __name__ == '__main__':
   verbose = '--verbose' in sys.argv or '-v' in sys.argv
   backup = '--backup' in sys.argv
   override = '--force-copy' in sys.argv
+  estimate = '--estimate' in sys.argv
 
   if verbose:
     import time
@@ -231,9 +242,23 @@ if __name__ == '__main__':
   if verbose: print("Operation: %s%s from %s to %s" % ("SIMULATE " if simulate else "", "ADD" if add else ("UPDATE" if not sync else ("SYNC" if not override else "COPY")), source, target))
 
 
+  # Determine total file size
+  if estimate:
+    MB = 1024 << 10
+    command = constructCommand(stats = True)
+    if verbose: print("\nAnalyzing: %s" % command)
+    so = subprocess.Popen(command, shell = False, bufsize = 1, stdout = subprocess.PIPE, stderr = sys.stderr).communicate()[0]
+    lines = so.replace("\r\n", "\n").split("\n")
+    line = [l for l in lines if line.startswith("Number of files:")][0]
+    totalfiles = int(line.split("Number of files: ")[1].split(" (")[0].replace(",", ""))
+    line = [l for l in lines if line.startswith("Total file size:")][0]
+    totalbytes = int(line.split("Total file size: ")[1].split(" bytes")[0].replace(",", ""))
+    print("  Estimated duration for %d entries: %.1f (internal HDD) %.1f (Ethernet) %.1f (USB3)" % (totalfiles, totalbytes / (60 * 90 * MB), totalbytes / (60 * 12.5 * MB), totalbytes / (60 * 0.4)))
+    input("Hit Enter to continue.")
+
   # Simulation rsync run
   if not file and (simulate or not add):  # only simulate in multi-file mode. in add-only mode we need not check for conflicts
-    command = getCommand(simulate = True)
+    command = constructCommand(simulate = True)
     if verbose: print("\nSimulating: %s" % command)
     so = subprocess.Popen(command, shell = False, bufsize = 1, stdout = subprocess.PIPE, stderr = sys.stderr).communicate()[0]
     lines = so.replace("\r\n", "\n").split("\n")
@@ -300,7 +325,7 @@ if __name__ == '__main__':
     print("Aborting before execution by user request.")  # never continue beyond this point
     if verbose: print("Finished after %.1f minutes." % ((time.time() - time_start) / 60.))
     sys.exit(0)
-  command = getCommand(simulate = False)
+  command = constructCommand(simulate = False)
   if verbose: print("\nExecuting: " + command)
   subprocess.Popen(command, shell = False, bufsize = 1, stdout = sys.stdout, stderr = sys.stderr).wait()
 
