@@ -181,6 +181,7 @@ if __name__ == '__main__':
     remote = user + "@" + host
     target = remote + ":" + path  # TODO this simply reconstructs what ws deconstructed above, right?
   else:  # local mode
+    if not os.path.exists(sys.argv[1]): raise Exception("Target folder doesn't exist. Create manually first to sync. Avoids bad surprises")
     target = cygwinify(os.path.abspath(sys.argv[1]))
 
   try:
