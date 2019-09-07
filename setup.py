@@ -1,8 +1,6 @@
 import os, sys, time
 from setuptools import setup, find_packages
 
-if sys.version_info.major > 2: raise Exception("Only works well on Python 2.7, using PyPy2-6.0 is recommended")
-
 lt = time.localtime()
 version = (lt.tm_year, (10 + lt.tm_mon) * 100 + lt.tm_mday, (10 + lt.tm_hour) * 100 + lt.tm_min)
 versionString = '.'.join(map(str, version))
@@ -30,6 +28,10 @@ setup(
         Programming Language :: Python
         Programming Language :: Python :: 2
         Programming Language :: Python :: 2.7
+        Programming Language :: Python :: 3
+        Programming Language :: Python :: 3.5
+        Programming Language :: Python :: 3.6
+        Programming Language :: Python :: 3.7
         """.split('\n') if c.strip()],  # https://pypi.python.org/pypi?%3Aaction=list_classifiers
   keywords = 'rsync wrapper backup safety feedback UI interface',
   author = 'Arne Bachmann',

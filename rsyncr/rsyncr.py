@@ -1,6 +1,5 @@
-# A supporting rsync wrapper that does the heavy lifting to support humans in detecting dangerous changes to a folder structure synchronization.
+# rsync wrapper script that supports humans in detecting dangerous changes to a folder structure synchronization.
 # The script highlights the main changes and detects potential unwanted file deletions, while hinting to moved files that might correspond to a folder rename or move.
-# TODO --info=progress2 -h (without -v) to show life transfer speed
 
 # rsync status output explanation:
 #   Source: https://stackoverflow.com/questions/4493525/rsync-what-means-the-f-on-rsync-logs
@@ -35,6 +34,7 @@
 
 # Standard modules
 import collections, os, subprocess, sys
+if sys.version_info.major == 3: raw_input = input; from functools import reduce
 
 
 # Constants
@@ -95,16 +95,17 @@ def parseLine(line):
 
 def constructCommand(simulate, stats = False):  # -m prune empty dir chains from file list  -I copy even if size/mtime match
   ''' Warning: Consults global variables. '''
+  quote = '"' if sys.platform == "win32" else ""
   if stats:  # TODO not accutrate as missing ignores etc,
-    return '"%s"' % rsyncPath + "-n --stats %s%s '%s' '%s'" % (
+    return '%s%s%s' % (quote, rsyncPath, quote) + " -n --stats %s%s '%s' '%s'" % (
         "-r " if not flat and not file else "",
         "--ignore-existing " if add else ("-I " if override else "-u "),
         source,
         target
       )
 
-  return '"%s"' % rsyncPath + " %s%s%s%s%s%s%s -i -t --exclude=.redundir/ --exclude=$RECYCLE.BIN/ --exclude='System Volume Information' --filter='P .redundir' --filter='P $RECYCLE.BIN' --filter='P System Volume Information' '%s' '%s'" % (  # -t keep times, -i itemize
-      "-n " if simulate else "",
+  return '%s%s%s' % (quote, rsyncPath, quote) + " %s%s%s%s%s%s%s -i -t --exclude=.redundir/ --exclude=$RECYCLE.BIN/ --exclude='System Volume Information' --filter='P .redundir' --filter='P $RECYCLE.BIN' --filter='P System Volume Information' '%s' '%s'" % (  # -t keep times, -i itemize
+      "-n " if simulate else "--info=progress2 -h ",
       "-r " if not flat and not file else "",
       "--ignore-existing " if add else ("-I " if override else "-u "),  # -u only copy if younger, --ignore-existing only copy additional files (vs. --existing: don't add new files)
       "--delete --prune-empty-dirs --delete-excluded " if sync else "",
@@ -248,7 +249,7 @@ if __name__ == '__main__':
     MB = 1024 << 10
     command = constructCommand(stats = True)
     if verbose: print("\nAnalyzing: %s" % command)
-    so = subprocess.Popen(command, shell = False, bufsize = 1, stdout = subprocess.PIPE, stderr = sys.stderr).communicate()[0]
+    so = subprocess.Popen(command, shell = True, bufsize = 1, stdout = subprocess.PIPE, stderr = sys.stderr).communicate()[0]
     lines = so.replace("\r\n", "\n").split("\n")
     line = [l for l in lines if line.startswith("Number of files:")][0]
     totalfiles = int(line.split("Number of files: ")[1].split(" (")[0].replace(",", ""))
@@ -261,8 +262,8 @@ if __name__ == '__main__':
   if not file and (simulate or not add):  # only simulate in multi-file mode. in add-only mode we need not check for conflicts
     command = constructCommand(simulate = True)
     if verbose: print("\nSimulating: %s" % command)
-    so = subprocess.Popen(command, shell = False, bufsize = 1, stdout = subprocess.PIPE, stderr = sys.stderr).communicate()[0]
-    lines = so.replace("\r\n", "\n").split("\n")
+    so = subprocess.Popen(command, shell = True, bufsize = 1, stdout = subprocess.PIPE, stderr = sys.stderr).communicate()[0]
+    lines = so.decode(sys.stdout.encoding).replace("\r\n", "\n").split("\n")
     entries = [parseLine(line) for line in lines if line != ""]  # parse itemized information
     entries = [entry for entry in entries if entry.path != "" and not entry.path.endswith(".corrupdetect")]  # throw out all parent folders (TODO might require makedirs())
 
@@ -283,43 +284,36 @@ if __name__ == '__main__':
     potentialMoveDirs = {}
     if '--skip-move' not in sys.argv:
       if verbose: print("Computing potential directory moves")  # HINT: a check if all removed files can be found in a new directory cannot be done, as we only that that a directory has been deleted, but nothing about its files
-      potentialMoveDirs = {delname: ", ".join(["%s:%d" % (_[1], _[0]) for _ in sorted([(distance(os.path.basename(addname), os.path.basename(delname)), addname) for addname in newdirs.keys()]) if _[0] < MAX_EDIT_DISTANCE][:MAX_MOVE_DIRS]) for delname in potentialMoves.keys() + removes}
+      potentialMoveDirs = {delname: ", ".join(["%s:%d" % (_[1], _[0]) for _ in sorted([(distance(os.path.basename(addname), os.path.basename(delname)), addname) for addname in newdirs.keys()]) if _[0] < MAX_EDIT_DISTANCE][:MAX_MOVE_DIRS]) for delname in list(potentialMoves.keys()) + removes}
       potentialMoveDirs = {k: v for k, v in potentialMoveDirs.items() if v != ""}
 
 
-    # User output
-    if len(added) > 0:
-      print("%-5s added files" % len(added))
-      if verbose: print("\n".join("  " + add for add in added))
-    if len(newdirs) > 0:
-      print("%-5s added dirs  (including %d files)" % (len(newdirs), sum([len(files) for files in newdirs.values()])))
-      if verbose: print("\n".join("DIR " + folder + " (%d files)" % len(files) + ("\n    " + "\n    ".join(files) if len(files) > 0 else "") for folder, files in sorted(newdirs.items())))
-    if len(modified) > 0:
-      print("%-5s mod'd files" % len(modified))
-      if verbose: print("\n".join("  > " + mod for mod in sorted(modified)))
-    if len(removes) > 0:
-      print("%-5s rem'd entries" % len(removes))
-      print("\n".join("  " + rem for rem in sorted(removes)))
-    if len(potentialMoves) > 0:
-      print("%-5s moved files (maybe)" % len(potentialMoves))
-      print("\n".join("  %s -> %s" % (_from, _tos) for _from, _tos in sorted(potentialMoves.items())))
-    if len(potentialMoveDirs) > 0:
-      print("%-5s moved dirs  (maybe) " % len(potentialMoveDirs))
-      print("\n".join("  %s -> %s" % (_from, _tos) for _from, _tos in sorted(potentialMoveDirs.items())))
-    if not (added or newdirs or modified or removes):
-      print("Nothing to do.")
+    # User interaction
+    if len(added) > 0:             print("%-5s added files" % len(added))
+    if len(modified) > 0:          print("%-5s chngd files" % len(modified))
+    if len(removes) > 0:           print("%-5s remvd entries" % len(removes))
+    if len(potentialMoves) > 0:    print("%-5s moved files (maybe)" % len(potentialMoves))
+    if len(newdirs) > 0:           print("%-5s Added dirs (including %d files)" % (len(newdirs), sum([len(files) for files in newdirs.values()])))
+    if len(potentialMoveDirs) > 0: print("%-5s Moved dirs (maybe) " % len(potentialMoveDirs))
+    if not (added or newdirs or modified or removes): print("Nothing to do.")
 
+    while ask:
+      selection = raw_input("""Options:
+  show (a)dded (%d), (c)hanged (%d), (r)emoved (%d), (m)oved files (%d), (A)dded (%d) or (M)oved (%d) folders
+  (y) - continue
+  otherwise: exit.\n  => """ % (len(added), len(modified), len(removes), len(potentialMoves), len(newdirs), len(potentialMoveDirs))).strip()
+      if   selection == "a": print("\n".join("  " + add for add in added))
+      elif selection == "c": print("\n".join("  > " + mod for mod in sorted(modified)))
+      elif selection == "r": print("\n".join("  " + rem for rem in sorted(removes)))
+      elif selection == "m": print("\n".join("  %s -> %s" % (_from, _tos) for _from, _tos in sorted(potentialMoves.items())))
+      elif selection == "A": print("\n".join("DIR " + folder + " (%d files)" % len(files) + ("\n    " + "\n    ".join(files) if len(files) > 0 else "") for folder, files in sorted(newdirs.items())))
+      elif selection == "M": print("\n".join("  %s -> %s" % (_from, _tos) for _from, _tos in sorted(potentialMoveDirs.items())))
+      elif selection == "y": force = True; break
+      else: sys.exit(1)
 
-    # Breaking point before real execution
-    if ask:
-      if sys.platform == 'win32':
-        print("Cannot get interactive user input from wrapper batch file")
-      else:
-        force = raw_input("Continue? [y/N] ").strip().lower().startswith('y')  # TODO or input() for Python 3
-    if len(removes) + len(potentialMoves) + len(potentialMoveDirs) > 0 and not force:
-      print("\nPotentially harmful changes detected. Use --force or -y to run rsync anyway.")
-      sys.exit(0)
-
+  if len(removes) + len(potentialMoves) + len(potentialMoveDirs) > 0 and not force:
+    print("\nPotentially harmful changes detected. Use --force or -y to run rsync anyway.")
+    sys.exit(1)
 
   # Main rsync execution with some stats output
   if simulate:
@@ -328,7 +322,7 @@ if __name__ == '__main__':
     sys.exit(0)
   command = constructCommand(simulate = False)
   if verbose: print("\nExecuting: " + command)
-  subprocess.Popen(command, shell = False, bufsize = 1, stdout = sys.stdout, stderr = sys.stderr).wait()
+  subprocess.Popen(command, shell = True, bufsize = 1, stdout = sys.stdout, stderr = sys.stderr).wait()
 
   # Quit
   if verbose: print("Finished after %.1f minutes." % ((time.time() - time_start) / 60.))
