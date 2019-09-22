@@ -34,7 +34,8 @@
 
 # Standard modules
 import collections, os, subprocess, sys
-if sys.version_info.major == 3: raw_input = input; from functools import reduce
+if sys.version_info.major == 2: input = raw_input
+else: from functools import reduce
 
 
 # Constants
@@ -247,15 +248,15 @@ if __name__ == '__main__':
   # Determine total file size
   if estimate:
     MB = 1024 << 10
-    command = constructCommand(stats = True)
+    command = constructCommand(simulate = True, stats = True)
     if verbose: print("\nAnalyzing: %s" % command)
     so = subprocess.Popen(command, shell = True, bufsize = 1, stdout = subprocess.PIPE, stderr = sys.stderr).communicate()[0]
     lines = so.replace("\r\n", "\n").split("\n")
-    line = [l for l in lines if line.startswith("Number of files:")][0]
+    line = [l for l in lines if l.startswith("Number of files:")][0]
     totalfiles = int(line.split("Number of files: ")[1].split(" (")[0].replace(",", ""))
-    line = [l for l in lines if line.startswith("Total file size:")][0]
+    line = [l for l in lines if l.startswith("Total file size:")][0]
     totalbytes = int(line.split("Total file size: ")[1].split(" bytes")[0].replace(",", ""))
-    print("  Estimated duration for %d entries: %.1f (internal HDD) %.1f (Ethernet) %.1f (USB3)" % (totalfiles, totalbytes / (60 * 90 * MB), totalbytes / (60 * 12.5 * MB), totalbytes / (60 * 0.4)))
+    print("\nEstimated minutes for %d entries: %.1f (internal HDD) %.1f (Ethernet) %.1f (USB3)" % (totalfiles, totalbytes / (60 * 90 * MB), totalbytes / (60 * 12.5 * MB), totalbytes / (60 * 0.4 * MB)))
     input("Hit Enter to continue.")
 
   # Simulation rsync run
@@ -297,7 +298,7 @@ if __name__ == '__main__':
     if len(potentialMoveDirs) > 0: print("%-5s Moved dirs (maybe) " % len(potentialMoveDirs))
     if not (added or newdirs or modified or removes): print("Nothing to do.")
 
-    while ask:
+    while ask:  # TODO A shows added files, not folders
       selection = raw_input("""Options:
   show (a)dded (%d), (c)hanged (%d), (r)emoved (%d), (m)oved files (%d), (A)dded (%d) or (M)oved (%d) folders
   (y) - continue
