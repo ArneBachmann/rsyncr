@@ -105,7 +105,7 @@ def constructCommand(simulate, stats = False):  # -m prune empty dir chains from
         target
       )
 
-  return '%s%s%s' % (quote, rsyncPath, quote) + " %s%s%s%s%s%s%s -i -t --exclude=.redundir/ --exclude=$RECYCLE.BIN/ --exclude='System Volume Information' --filter='P .redundir' --filter='P $RECYCLE.BIN' --filter='P System Volume Information' '%s' '%s'" % (  # -t keep times, -i itemize
+  return '%s%s%s' % (quote, rsyncPath, quote) + " %s%s%s%s%s%s%s -i -t --no-i-r --exclude=.redundir/ --exclude=$RECYCLE.BIN/ --exclude='System Volume Information' --filter='P .redundir' --filter='P $RECYCLE.BIN' --filter='P System Volume Information' '%s' '%s'" % (  # -t keep times, -i itemize
       "-n " if simulate else "--info=progress2 -h ",
       "-r " if not flat and not file else "",
       "--ignore-existing " if add else ("-I " if override else "-u "),  # -u only copy if younger, --ignore-existing only copy additional files (vs. --existing: don't add new files)
