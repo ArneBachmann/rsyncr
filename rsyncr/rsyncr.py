@@ -131,13 +131,15 @@ if __name__ == '__main__':
       --add                -a  Copy only additional files (otherwise update modified files)
       --sync               -s  Remove files in target if removed in source, including empty folders
       --simulate           -n  Don't actually sync, stop after simulation
-      --force-foldername   -f  Sync even if target folder name differs
-      --force              -y  Sync even if deletions or moved files have been detected
-      --ask                -i  In case of dangerous operation, ask user interactively
+      --estimate               Estimate copy speed
       --file <file path>       Transfer a single local file instead of synchronizing a folder
       --user <user name>   -u  Manual remote user name specification, unless using user@host notation
+
+    Interactive options:
+      --ask                -i  In case of dangerous operation, ask user interactively
+      --force-foldername   -f  Sync even if target folder name differs
+      --force              -y  Sync even if deletions or moved files have been detected
       --force-copy             Force writing over existing files
-      --estimate               Estimate copy speed
 
     Generic options:
       --flat       -1  Don't recurse into sub folders, only copy current folder
