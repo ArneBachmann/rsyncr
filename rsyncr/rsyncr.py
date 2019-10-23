@@ -105,7 +105,7 @@ def constructCommand(simulate, stats = False):  # -m prune empty dir chains from
         target
       )
 
-  return '%s%s%s' % (quote, rsyncPath, quote) + " %s%s%s%s%s%s%s -i -t --no-i-r --exclude=.redundir/ --exclude=$RECYCLE.BIN/ --exclude='System Volume Information' --filter='P .redundir' --filter='P $RECYCLE.BIN' --filter='P System Volume Information' '%s' '%s'" % (  # -t keep times, -i itemize
+  return '%s%s%s' % (quote, rsyncPath, quote) + " %s%s%s%s%s%s%s%s -i -t --no-i-r --exclude=.redundir/ --exclude=$RECYCLE.BIN/ --exclude='System Volume Information' --filter='P .redundir' --filter='P $RECYCLE.BIN' --filter='P System Volume Information' '%s' '%s'" % (  # -t keep times, -i itemize
       "-n " if simulate else "--info=progress2 -h ",
       "-r " if not flat and not file else "",
       "--ignore-existing " if add else ("-I " if override else "-u "),  # -u only copy if younger, --ignore-existing only copy additional files (vs. --existing: don't add new files)
@@ -113,6 +113,7 @@ def constructCommand(simulate, stats = False):  # -m prune empty dir chains from
       "-S -z --compress-level=9 " if compress else "",
       "-P " if file else "",
       "" if simulate or not backup else "-b --suffix='~~' --human-readable --stats ",
+      "-c" if checksum else "",
       source,
       target
     )
@@ -143,6 +144,7 @@ if __name__ == '__main__':
 
     Generic options:
       --flat       -1  Don't recurse into sub folders, only copy current folder
+      --checksum   -C  Full file comparison using checksums
       --compress   -c  Compress data during transport, handle many files better
       --verbose    -v  Show more output
       --help       -h  Show this information
@@ -162,6 +164,7 @@ if __name__ == '__main__':
   backup = '--backup' in sys.argv
   override = '--force-copy' in sys.argv
   estimate = '--estimate' in sys.argv
+  checksum = '--checksum' in sys.argv or '-C' in sys.argv
 
   if verbose:
     import time
@@ -241,7 +244,7 @@ if __name__ == '__main__':
     diff = os.path.relpath(target, source)
     if diff != "" and not diff.startswith(".."):
       raise Exception("Cannot copy to parent folder of source! Relative path: .%s%s" % (os.sep, diff))
-  if not force_foldername and os.path.basename(source[:-1]) != os.path.basename(target[:-1]):
+  if not force_foldername and os.path.basename(source[:-1]).lower() != os.path.basename(target[:-1]).lower():
     raise Exception("Are you sure you want to synchronize from %r to %r? Use --force-foldername or -f if yes" % (os.path.basename(source[:-1]), os.path.basename(target[:-1])))  # TODO D: to E: raises warning as well
   if file: source += file  # combine source folder (with trailing slash) with file name
   if verbose: print("Operation: %s%s from %s to %s" % ("SIMULATE " if simulate else "", "ADD" if add else ("UPDATE" if not sync else ("SYNC" if not override else "COPY")), source, target))
@@ -314,9 +317,9 @@ if __name__ == '__main__':
       elif selection == "y": force = True; break
       else: sys.exit(1)
 
-  if len(removes) + len(potentialMoves) + len(potentialMoveDirs) > 0 and not force:
-    print("\nPotentially harmful changes detected. Use --force or -y to run rsync anyway.")
-    sys.exit(1)
+    if len(removes) + len(potentialMoves) + len(potentialMoveDirs) > 0 and not force:
+      print("\nPotentially harmful changes detected. Use --force or -y to run rsync anyway.")
+      sys.exit(1)
 
   # Main rsync execution with some stats output
   if simulate:
