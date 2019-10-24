@@ -43,6 +43,7 @@ else: from functools import reduce
 # Constants
 MAX_MOVE_DIRS = 2  # don't show more than this number of potential directory moves
 MAX_EDIT_DISTANCE = 5  # insertions/deletions/replacements(/moves for damerau-levenshtein)
+QUOTE = '"' if sys.platform == "win32" else ""
 
 # Rsync output classification helpers
 State = {".": "unchanged", ">": "store", "c": "changed", "<": "restored", "*": "message"}  # rsync output marker detection
@@ -98,23 +99,23 @@ def parseLine(line):
 
 def constructCommand(simulate, stats = False):  # -m prune empty dir chains from file list  -I copy even if size/mtime match
   ''' Warning: Consults global variables. '''
-  quote = '"' if sys.platform == "win32" else ""
-  if stats:  # TODO not accutrate as missing ignores etc,
-    return '%s%s%s' % (quote, rsyncPath, quote) + " -n --stats %s%s '%s' '%s'" % (
+  if stats:  # TODO not accurate as missing ignores etc,
+    return '%s%s%s' % (QUOTE, rsyncPath, QUOTE) + " -n --stats %s%s '%s' '%s'" % (
         "-r " if not flat and not file else "",
         "--ignore-existing " if add else ("-I " if override else "-u "),
         source,
         target
       )
 
-  return '%s%s%s' % (quote, rsyncPath, quote) + " %s%s%s%s%s%s%s -i -t --no-i-r --exclude=.redundir/ --exclude=$RECYCLE.BIN/ --exclude='System Volume Information' --filter='P .redundir' --filter='P $RECYCLE.BIN' --filter='P System Volume Information' '%s' '%s'" % (  # -t keep times, -i itemize
-      "-n " if simulate else "",  # "--info=progress2 -h ",
+  return '%s%s%s' % (QUOTE, rsyncPath, QUOTE) + " %s%s%s%s%s%s%s%s -i -t --no-i-r --exclude=.redundir/ --exclude=$RECYCLE.BIN/ --exclude='System Volume Information' --filter='P .redundir' --filter='P $RECYCLE.BIN' --filter='P System Volume Information' '%s' '%s'" % (  # -t keep times, -i itemize
+      "-n " if simulate else ("--info=progress2 -h " if protocol >= 31 or rversion >= (3, 1) else ""),
       "-r " if not flat and not file else "",
       "--ignore-existing " if add else ("-I " if override else "-u "),  # -u only copy if younger, --ignore-existing only copy additional files (vs. --existing: don't add new files)
       "--delete --prune-empty-dirs --delete-excluded " if sync else "",
       "-S -z --compress-level=9 " if compress else "",
       "-P " if file else "",
       "" if simulate or not backup else "-b --suffix='~~' --human-readable --stats ",
+      "-c" if checksum else "",
       source,
       target
     )
@@ -133,16 +134,19 @@ if __name__ == '__main__':
       --add                -a  Copy only additional files (otherwise update modified files)
       --sync               -s  Remove files in target if removed in source, including empty folders
       --simulate           -n  Don't actually sync, stop after simulation
-      --force-foldername   -f  Sync even if target folder name differs
-      --force              -y  Sync even if deletions or moved files have been detected
-      --ask                -i  In case of dangerous operation, ask user interactively
+      --estimate               Estimate copy speed
       --file <file path>       Transfer a single local file instead of synchronizing a folder
       --user <user name>   -u  Manual remote user name specification, unless using user@host notation
+
+    Interactive options:
+      --ask                -i  In case of dangerous operation, ask user interactively
+      --force-foldername   -f  Sync even if target folder name differs
+      --force              -y  Sync even if deletions or moved files have been detected
       --force-copy             Force writing over existing files
-      --estimate               Estimate copy speed
 
     Generic options:
       --flat       -1  Don't recurse into sub folders, only copy current folder
+      --checksum   -C  Full file comparison using checksums
       --compress   -c  Compress data during transport, handle many files better
       --verbose    -v  Show more output
       --help       -h  Show this information
@@ -162,6 +166,7 @@ if __name__ == '__main__':
   backup = '--backup' in sys.argv
   override = '--force-copy' in sys.argv
   estimate = '--estimate' in sys.argv
+  checksum = '--checksum' in sys.argv or '-C' in sys.argv
 
   if verbose:
     import time
@@ -241,13 +246,19 @@ if __name__ == '__main__':
     diff = os.path.relpath(target, source)
     if diff != "" and not diff.startswith(".."):
       raise Exception("Cannot copy to parent folder of source! Relative path: .%s%s" % (os.sep, diff))
-  if not force_foldername and os.path.basename(source[:-1]) != os.path.basename(target[:-1]):
+  if not force_foldername and os.path.basename(source[:-1]).lower() != os.path.basename(target[:-1]).lower():
     raise Exception("Are you sure you want to synchronize from %r to %r using different folder names? Use --force-foldername or -f if yes" % (os.path.basename(source[:-1]), os.path.basename(target[:-1])))  # TODO D: to E: raises warning as well
   if file: source += file  # combine source folder (with trailing slash) with file name
   if verbose: print("Operation: %s%s from %s to %s" % ("SIMULATE " if simulate else "", "ADD" if add else ("UPDATE" if not sync else ("SYNC" if not override else "COPY")), source, target))
 
 
   # Determine total file size
+  rversion = subprocess.Popen("%s%s%s --version" % (QUOTE, rsyncPath, QUOTE), shell = True, bufsize = 1, stdout = subprocess.PIPE, stderr = sys.stderr).communicate()[0].replace("\r\n", "\n").split("\n")[0]
+  protocol = int(rversion.split("protocol version ")[1])
+  assert rversion.startswith("rsync"), "Cannot determine rsync version: " + rversion  # e.g. rsync  version 3.0.4  protocol version 30)
+  rversion = tuple([int(_) for _ in rversion.split("version ")[1].split(" ")[0].split(".")[:2]])
+  print("Detected rsync version %d.%d.x  protocol %d" % (rversion[0], rversion[1], protocol))
+
   if estimate:
     MB = 1024 << 10
     command = constructCommand(simulate = True, stats = True)
