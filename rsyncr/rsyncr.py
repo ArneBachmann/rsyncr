@@ -1,6 +1,8 @@
 # rsync wrapper script that supports humans in detecting dangerous changes to a folder structure synchronization.
 # The script highlights the main changes and detects potential unwanted file deletions, while hinting to moved files that might correspond to a folder rename or move.
 
+# TODO copying .git folders (or any dot-folders?) changes the owner and access rights! This leads to problems on consecutive syncs
+
 # rsync status output explanation:
 #   Source: https://stackoverflow.com/questions/4493525/rsync-what-means-the-f-on-rsync-logs
 #   1: > received,  . unchanged or modified (cf. below), c local change, * message, e.g. deleted, h hardlink, * = message following (no path)
@@ -106,7 +108,7 @@ def constructCommand(simulate, stats = False):  # -m prune empty dir chains from
       )
 
   return '%s%s%s' % (quote, rsyncPath, quote) + " %s%s%s%s%s%s%s -i -t --no-i-r --exclude=.redundir/ --exclude=$RECYCLE.BIN/ --exclude='System Volume Information' --filter='P .redundir' --filter='P $RECYCLE.BIN' --filter='P System Volume Information' '%s' '%s'" % (  # -t keep times, -i itemize
-      "-n " if simulate else "--info=progress2 -h ",
+      "-n " if simulate else "",  # "--info=progress2 -h ",
       "-r " if not flat and not file else "",
       "--ignore-existing " if add else ("-I " if override else "-u "),  # -u only copy if younger, --ignore-existing only copy additional files (vs. --existing: don't add new files)
       "--delete --prune-empty-dirs --delete-excluded " if sync else "",
@@ -240,7 +242,7 @@ if __name__ == '__main__':
     if diff != "" and not diff.startswith(".."):
       raise Exception("Cannot copy to parent folder of source! Relative path: .%s%s" % (os.sep, diff))
   if not force_foldername and os.path.basename(source[:-1]) != os.path.basename(target[:-1]):
-    raise Exception("Are you sure you want to synchronize from %r to %r? Use --force-foldername or -f if yes" % (os.path.basename(source[:-1]), os.path.basename(target[:-1])))  # TODO D: to E: raises warning as well
+    raise Exception("Are you sure you want to synchronize from %r to %r using different folder names? Use --force-foldername or -f if yes" % (os.path.basename(source[:-1]), os.path.basename(target[:-1])))  # TODO D: to E: raises warning as well
   if file: source += file  # combine source folder (with trailing slash) with file name
   if verbose: print("Operation: %s%s from %s to %s" % ("SIMULATE " if simulate else "", "ADD" if add else ("UPDATE" if not sync else ("SYNC" if not override else "COPY")), source, target))
 
@@ -312,9 +314,9 @@ if __name__ == '__main__':
       elif selection == "y": force = True; break
       else: sys.exit(1)
 
-  if len(removes) + len(potentialMoves) + len(potentialMoveDirs) > 0 and not force:
-    print("\nPotentially harmful changes detected. Use --force or -y to run rsync anyway.")
-    sys.exit(1)
+    if len(removes) + len(potentialMoves) + len(potentialMoveDirs) > 0 and not force:
+      print("\nPotentially harmful changes detected. Use --force or -y to run rsync anyway.")
+      sys.exit(1)
 
   # Main rsync execution with some stats output
   if simulate:
