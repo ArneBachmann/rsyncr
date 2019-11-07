@@ -277,8 +277,13 @@ if __name__ == '__main__':
     command = constructCommand(simulate = True)
     if verbose: print("\nSimulating: %s" % command)
     so = subprocess.Popen(command, shell = True, bufsize = 1, stdout = subprocess.PIPE, stderr = sys.stderr).communicate()[0]
-    try: lines = so.decode(sys.stdout.encoding).replace("\r\n", "\n").split("\n")
-    except Exception as E: print("Error: could not decode STDOUT output using encoding %r\n%r" % (sys.stdout.encoding, E)); import pdb; pdb.set_trace()
+    lines = so.replace(b"\r\n", b"\n").split(b"\n")
+    for _line in range(len(lines)):  # decode each line independently in case there are different encodings
+      try:
+        lines[_line] = lines[_line].decode(sys.stdout.encoding)
+      except Exception:
+        try: lines[_line] = lines[_line].decode("utf-8" if sys.stdout.encoding != "utf-8" else "cp1252")
+        except Exception as E: print("Error: could not decode STDOUT output using encoding %r or cp1252" % sys.stdout.encoding); import pdb; pdb.set_trace()
     entries = [parseLine(line) for line in lines if line != ""]  # parse itemized information
     entries = [entry for entry in entries if entry.path != "" and not entry.path.endswith(".corrupdetect")]  # throw out all parent folders (TODO might require makedirs())
 
