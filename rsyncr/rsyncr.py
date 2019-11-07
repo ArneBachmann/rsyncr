@@ -253,7 +253,7 @@ if __name__ == '__main__':
 
 
   # Determine total file size
-  rversion = subprocess.Popen("%s%s%s --version" % (QUOTE, rsyncPath, QUOTE), shell = True, bufsize = 1, stdout = subprocess.PIPE, stderr = sys.stderr).communicate()[0].replace("\r\n", "\n").split("\n")[0]
+  rversion = subprocess.Popen("%s%s%s --version" % (QUOTE, rsyncPath, QUOTE), shell = True, bufsize = 1, stdout = subprocess.PIPE, stderr = sys.stderr).communicate()[0].decode(sys.stdout.encoding).replace("\r\n", "\n").split("\n")[0]
   protocol = int(rversion.split("protocol version ")[1])
   assert rversion.startswith("rsync"), "Cannot determine rsync version: " + rversion  # e.g. rsync  version 3.0.4  protocol version 30)
   rversion = tuple([int(_) for _ in rversion.split("version ")[1].split(" ")[0].split(".")[:2]])
@@ -277,7 +277,8 @@ if __name__ == '__main__':
     command = constructCommand(simulate = True)
     if verbose: print("\nSimulating: %s" % command)
     so = subprocess.Popen(command, shell = True, bufsize = 1, stdout = subprocess.PIPE, stderr = sys.stderr).communicate()[0]
-    lines = so.decode(sys.stdout.encoding).replace("\r\n", "\n").split("\n")
+    try: lines = so.decode(sys.stdout.encoding).replace("\r\n", "\n").split("\n")
+    except Exception as E: print("Error: could not decode STDOUT output using encoding %r\n%r" % (sys.stdout.encoding, E)); import pdb; pdb.set_trace()
     entries = [parseLine(line) for line in lines if line != ""]  # parse itemized information
     entries = [entry for entry in entries if entry.path != "" and not entry.path.endswith(".corrupdetect")]  # throw out all parent folders (TODO might require makedirs())
 
