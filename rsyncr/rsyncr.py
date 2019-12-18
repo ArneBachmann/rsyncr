@@ -182,7 +182,7 @@ if __name__ == '__main__':
     while len(file) > 0 and file[0] == '/': file = file[1:]
     while len(file) > 0 and file[-1] == '/': file = file[:-1]
 
-  # Target handling. Accepted target paths: /local_path, or D:\local_path, or rsync://path, or rsync://user@path, arnee@rsync.hidrive.strato.com:/users/arnee/path/
+  # Target handling. Accepted target paths: D: (cwd on D:), or /local_path, or D:\local_path, or rsync://path, or rsync://user@path, arnee@rsync.hidrive.strato.com:/users/arnee/path/
   user = sys.argv[sys.argv.index('--user') + 1] if '--user' in sys.argv else None
   if user: del sys.argv[sys.argv.index('--user'):sys.argv.index('--user') + 2]
   remote = None
@@ -202,7 +202,13 @@ if __name__ == '__main__':
     target = remote + ":" + path  # TODO this simply reconstructs what ws deconstructed above, right?
   else:  # local mode
     if not os.path.exists(sys.argv[1]): raise Exception("Target folder doesn't exist. Create manually first to sync. Avoids bad surprises")
-    target = cygwinify(os.path.abspath(sys.argv[1]))
+    if sys.argv[1].strip().endswith(":"):  # just a drive letter - meaning current folder of that drive! otherwise use drive + backslash (D:\)
+      olddrive = os.path.abspath(os.getcwd())
+      os.chdir(sys.argv[1])    # change drive
+      drivepath = os.getcwd()  # get current folder on that drive
+      os.chdir(olddrive)       # change back
+    else: drivepath = sys.argv[1]
+    target = cygwinify(os.path.abspath(drivepath))
 
   try:
     from textdistance import distance as _distance  # https://github.com/orsinium/textdistance, now for Python 2 as well
