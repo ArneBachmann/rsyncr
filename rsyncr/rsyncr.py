@@ -53,7 +53,7 @@ FileState = collections.namedtuple("FileState", ["state", "type", "change", "pat
 
 
 # Utility functions
-def xany(pred, lizt): return reduce(lambda a, b: a or pred(b), lizt if hasattr(lizt, '__iter__') else list(lizt), False)
+def xany(pred, lizt): return reduce(lambda a, b: a or  pred(b), lizt if hasattr(lizt, '__iter__') else list(lizt), False)
 def xall(pred, lizt): return reduce(lambda a, b: a and pred(b), lizt if hasattr(lizt, '__iter__') else list(lizt), True)
 
 
@@ -123,7 +123,7 @@ def constructCommand(simulate, stats = False):  # -m prune empty dir chains from
 
 # Main script code
 if __name__ == '__main__':
-  if len(sys.argv) < 2 or '--help' in sys.argv or '-' in sys.argv: print("""rsyncr  (C) Arne Bachmann 2017-2019
+  if len(sys.argv) < 2 or '--help' in sys.argv or '-' in sys.argv: print("""rsyncr  (C) Arne Bachmann 2017-2020
     This rsync-wrapper simplifies backing up the current directory tree.
 
     Syntax:  rsyncr <target-path> [options]
@@ -323,7 +323,7 @@ if __name__ == '__main__':
     if len(potentialMoveDirs) > 0: print("%-5s Moved dirs (maybe) " % len(potentialMoveDirs))
     if not (added or newdirs or modified or removes): print("Nothing to do.")
 
-    while ask:  # TODO A shows added files, not folders
+    while ask:
       selection = raw_input("""Options:
   show (a)dded (%d), (c)hanged (%d), (r)emoved (%d), (m)oved files (%d), (A)dded (%d) or (M)oved (%d) folders
   (y) - continue
