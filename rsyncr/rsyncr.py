@@ -35,25 +35,26 @@
 
 
 # Standard modules
-import collections, os, subprocess, sys
-if sys.version_info.major == 2: input = raw_input
+import collections, os, subprocess, sys, time
+if sys.version_info.major == 2: input = raw_input  # noqa: F821
 else: from functools import reduce
+time_start = time.time()
 
 
 # Constants
-MAX_MOVE_DIRS = 2  # don't show more than this number of potential directory moves
-MAX_EDIT_DISTANCE = 5  # insertions/deletions/replacements(/moves for damerau-levenshtein)
+MAX_MOVE_DIRS = 2      # don't display more than this number of potential directory moves
+MAX_EDIT_DISTANCE = 5  # insertions/deletions/replacements (and also moves for damerau-levenshtein)
 QUOTE = '"' if sys.platform == "win32" else ""
 
 # Rsync output classification helpers
-State = {".": "unchanged", ">": "store", "c": "changed", "<": "restored", "*": "message"}  # rsync output marker detection
-Entry = {"f": "file", "d": "dir", "u": "unknown"}
+State =  {".": "unchanged", ">": "store", "c": "changed", "<": "restored", "*": "message"}  # rsync output marker detection
+Entry =  {"f": "file", "d": "dir", "u": "unknown"}
 Change = {".": False, "+": True, "s": True, "t": True}  # size/time have [.+st] in their position
 FileState = collections.namedtuple("FileState", ["state", "type", "change", "path", "newdir"])  # 9 characters and one space before relative path
 
 
 # Utility functions
-def xany(pred, lizt): return reduce(lambda a, b: a or pred(b), lizt if hasattr(lizt, '__iter__') else list(lizt), False)
+def xany(pred, lizt): return reduce(lambda a, b: a or  pred(b), lizt if hasattr(lizt, '__iter__') else list(lizt), False)
 def xall(pred, lizt): return reduce(lambda a, b: a and pred(b), lizt if hasattr(lizt, '__iter__') else list(lizt), True)
 
 
@@ -152,7 +153,6 @@ if __name__ == '__main__':
       --help       -h  Show this information
   """); sys.exit(0)
 
-
   # Parse program options
   add = '--add' in sys.argv or '-a' in sys.argv
   sync = '--sync' in sys.argv or '-s' in sys.argv
@@ -167,10 +167,6 @@ if __name__ == '__main__':
   override = '--force-copy' in sys.argv
   estimate = '--estimate' in sys.argv
   checksum = '--checksum' in sys.argv or '-C' in sys.argv
-
-  if verbose:
-    import time
-    time_start = time.time()
 
   # Source handling
   file = sys.argv[sys.argv.index('--file') + 1] if '--file' in sys.argv else None
@@ -323,8 +319,8 @@ if __name__ == '__main__':
     if len(potentialMoveDirs) > 0: print("%-5s Moved dirs (maybe) " % len(potentialMoveDirs))
     if not (added or newdirs or modified or removes): print("Nothing to do.")
 
-    while ask:  # TODO A shows added files, not folders
-      selection = raw_input("""Options:
+    while ask:
+      selection = input("""Options:
   show (a)dded (%d), (c)hanged (%d), (r)emoved (%d), (m)oved files (%d), (A)dded (%d) or (M)oved (%d) folders
   (y) - continue
   otherwise: exit.\n  => """ % (len(added), len(modified), len(removes), len(potentialMoves), len(newdirs), len(potentialMoveDirs))).strip()
