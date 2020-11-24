@@ -1,6 +1,7 @@
 # rsync wrapper script that supports humans in detecting dangerous changes to a folder structure synchronization.
 # The script highlights the main changes and detects potential unwanted file deletions, while hinting to moved files that might correspond to a folder rename or move.
 
+# TODO --ask -i doesn't wait and ask
 # TODO copying .git folders (or any dot-folders?) changes the owner and access rights! This leads to problems on consecutive syncs
 
 # rsync status output explanation:
