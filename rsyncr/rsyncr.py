@@ -111,7 +111,7 @@ def constructCommand(simulate, stats = False):  # -m prune empty dir chains from
 
   return '%s%s%s' % (QUOTE, rsyncPath, QUOTE) + " %s%s%s%s%s%s%s%s -i -t --no-i-r --exclude=.redundir/ --exclude=$RECYCLE.BIN/ --exclude='System Volume Information' --filter='P .redundir' --filter='P $RECYCLE.BIN' --filter='P System Volume Information' '%s' '%s'" % (  # -t keep times, -i itemize
       "-n " if simulate else ("--info=progress2 -h " if protocol >= 31 or rversion >= (3, 1) else ""),
-      "-r " if not flat and not file else "",
+      "-r " if not flat and not file else "",  # TODO allow flat with --delete
       "--ignore-existing " if add else ("-I " if override else "-u "),  # -u only copy if younger, --ignore-existing only copy additional files (vs. --existing: don't add new files)
       "--delete --prune-empty-dirs --delete-excluded " if sync else "",
       "-S -z --compress-level=9 " if compress else "",
@@ -267,13 +267,12 @@ if __name__ == '__main__':
     MB = 1024 << 10
     command = constructCommand(simulate = True, stats = True)
     if verbose: print("\nAnalyzing: %s" % command)
-    so = subprocess.Popen(command, shell = True, bufsize = 1, stdout = subprocess.PIPE, stderr = sys.stderr).communicate()[0]
-    lines = so.replace("\r\n", "\n").split("\n")
+    lines = subprocess.Popen(command, shell = True, bufsize = 1, stdout = subprocess.PIPE, stderr = sys.stderr).communicate()[0].decode(sys.stdout.encoding).replace("\r\n", "\n").split("\n")
     line = [l for l in lines if l.startswith("Number of files:")][0]
     totalfiles = int(line.split("Number of files: ")[1].split(" (")[0].replace(",", ""))
     line = [l for l in lines if l.startswith("Total file size:")][0]
     totalbytes = int(line.split("Total file size: ")[1].split(" bytes")[0].replace(",", ""))
-    print("\nEstimated minutes for %d entries: %.1f (internal HDD) %.1f (Ethernet) %.1f (USB3)" % (totalfiles, totalbytes / (60 * 90 * MB), totalbytes / (60 * 12.5 * MB), totalbytes / (60 * 0.4 * MB)))
+    print("\nEstimated minutes for %d entries: %.1f (SSD) %.1f (HDD) %.1f (Ethernet) %.1f (USB3)" % (totalfiles, totalbytes / (60 * 130 * MB), totalbytes / (60 * 60 * MB), totalbytes / (60 * 12.5 * MB), totalbytes / (60 * 0.4 * MB)))
     input("Hit Enter to continue.")
 
   # Simulation rsync run
@@ -306,7 +305,7 @@ if __name__ == '__main__':
     added = [entry.path for entry in entries if entry.type == "file" and entry.state in ("store", "changed") and entry.path and not xany(lambda a: entry.path in a, potentialMoves.values())]  # latter is a weak check
     modified = [name for name in modified if name not in added]
     potentialMoveDirs = {}
-    if '--skip-move' not in sys.argv and '--skip-moves' not in sys.argv:
+    if '--add' not in sys.argv and '--skip-move' not in sys.argv and '--skip-moves' not in sys.argv:
       if verbose: print("Computing potential directory moves")  # HINT: a check if all removed files can be found in a new directory cannot be done, as we only that that a directory has been deleted, but nothing about its files
       potentialMoveDirs = {delname: ", ".join(["%s:%d" % (_[1], _[0]) for _ in sorted([(distance(os.path.basename(addname), os.path.basename(delname)), addname) for addname in newdirs.keys()]) if _[0] < MAX_EDIT_DISTANCE][:MAX_MOVE_DIRS]) for delname in list(potentialMoves.keys()) + removes}
       potentialMoveDirs = {k: v for k, v in potentialMoveDirs.items() if v != ""}
