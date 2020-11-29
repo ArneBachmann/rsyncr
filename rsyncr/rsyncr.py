@@ -45,6 +45,7 @@ time_start = time.time()
 MAX_MOVE_DIRS = 2      # don't display more than this number of potential directory moves
 MAX_EDIT_DISTANCE = 5  # insertions/deletions/replacements (and also moves for damerau-levenshtein)
 QUOTE = '"' if sys.platform == "win32" else ""
+DEXCLUDE = ['catalog Previews.lrdata', '.redundir', '$RECYCLE.BIN', 'System Volume Information']
 
 # Rsync output classification helpers
 State =  {".": "unchanged", ">": "store", "c": "changed", "<": "restored", "*": "message"}  # rsync output marker detection
@@ -108,7 +109,7 @@ def constructCommand(simulate, stats = False):  # -m prune empty dir chains from
         target
       )
 
-  return '%s%s%s' % (QUOTE, rsyncPath, QUOTE) + " %s%s%s%s%s%s%s%s -i -t --no-i-r --exclude=.redundir/ --exclude=$RECYCLE.BIN/ --exclude='System Volume Information' --filter='P .redundir' --filter='P $RECYCLE.BIN' --filter='P System Volume Information' '%s' '%s'" % (  # -t keep times, -i itemize
+  return '%s%s%s' % (QUOTE, rsyncPath, QUOTE) + " %s%s%s%s%s%s%s%s -i -t --no-i-r %s '%s' '%s'" % (  # -t keep times, -i itemize
       "-n " if simulate else ("--info=progress2 -h " if protocol >= 31 or rversion >= (3, 1) else ""),
       "-r " if not flat and not file else "",  # TODO allow flat with --delete
       "--ignore-existing " if add else ("-I " if override else "-u "),  # -u only copy if younger, --ignore-existing only copy additional files (vs. --existing: don't add new files)
@@ -117,6 +118,7 @@ def constructCommand(simulate, stats = False):  # -m prune empty dir chains from
       "-P " if file else "",
       "" if simulate or not backup else "-b --suffix='~~' --human-readable --stats ",
       "-c" if checksum else "",
+      " ".join("--exclude='%s/' --filter='P %s'" % (de, de) for de in DEXCLUDE),
       source,
       target
     )
