@@ -114,7 +114,7 @@ def constructCommand(simulate, stats = False):  # -m prune empty dir chains from
       "-n " if simulate else ("--info=progress2 -h " if protocol >= 31 or rversion >= (3, 1) else ""),
       "-r " if not flat and not file else "",  # TODO allow flat with --delete
       "--ignore-existing " if add else ("-I " if override else "-u "),  # -u only copy if younger, --ignore-existing only copy additional files (vs. --existing: don't add new files)
-      "--delete --prune-empty-dirs --delete-excluded " if sync else "",
+      "--delete-after --prune-empty-dirs --delete-excluded " if sync else "",
       "-S -z --compress-level=9 " if compress else "",
       "-P " if file else "",
       "" if simulate or not backup else "-b --suffix='~~' --human-readable --stats ",
