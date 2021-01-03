@@ -117,7 +117,7 @@ def constructCommand(simulate, stats = False):  # -m prune empty dir chains from
       "--delete-after --prune-empty-dirs --delete-excluded " if sync else "",
       "-S -z --compress-level=9 " if compress else "",
       "-P " if file else "",
-      "" if simulate or not backup else "-b --suffix='~~' --human-readable --stats ",
+      "" if simulate or not backup else "-b --suffix='~~' -hh --stats ",  # 1024 units
       "-c" if checksum else "",
       " ".join("--exclude='%s/' --filter='P %s'" % (de, de) for de in DEXCLUDE),
       source,
