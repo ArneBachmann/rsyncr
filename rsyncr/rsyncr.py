@@ -324,13 +324,17 @@ if __name__ == '__main__':
     if len(potentialMoves) > 0:    print("%-5s moved files (maybe)" % len(potentialMoves))
     if len(newdirs) > 0:           print("%-5s Added dirs (including %d files)" % (len(newdirs), sum([len(files) for files in newdirs.values()])))
     if len(potentialMoveDirs) > 0: print("%-5s Moved dirs (maybe) " % len(potentialMoveDirs))
-    if not (added or newdirs or modified or removes): print("Nothing to do.")
-
+    if not (added or newdirs or modified or removes):
+      print("Nothing to do.")
+      if not simulate and ask: input("Enter: exit")
+      if verbose: print("Finished after %.1f minutes." % ((time.time() - time_start) / 60.))
+      sys.exit(0)
     while ask:
-      selection = input("""Options:
+      selection = (print if simulate else input)("""Options:
   show (a)dded (%d), (c)hanged (%d), (r)emoved (%d), (m)oved files (%d), (A)dded (%d) or (M)oved (%d) folders
   (y) - continue
   Enter: exit.\n  => """ % (len(added), len(modified), len(removes), len(potentialMoves), len(newdirs), len(potentialMoveDirs))).strip()
+
       if   selection == "a": print("\n".join("  " + add for add in added))
       elif selection == "c": print("\n".join("  > " + mod for mod in sorted(modified)))
       elif selection == "r": print("\n".join("  " + rem for rem in sorted(removes)))
@@ -346,9 +350,9 @@ if __name__ == '__main__':
 
   # Main rsync execution with some stats output
   if simulate:
-    print("Aborting before execution by user request.")  # never continue beyond this point
     if verbose: print("Finished after %.1f minutes." % ((time.time() - time_start) / 60.))
     sys.exit(0)
+
   command = constructCommand(simulate = False)
   if verbose: print("\nExecuting: " + command)
   subprocess.Popen(command, shell = True, bufsize = 1, stdout = sys.stdout, stderr = sys.stderr).wait()
