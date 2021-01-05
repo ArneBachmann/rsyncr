@@ -117,7 +117,7 @@ def constructCommand(simulate, stats = False):  # -m prune empty dir chains from
       "--delete-after --prune-empty-dirs --delete-excluded " if sync else "",
       "-S -z --compress-level=9 " if compress else "",
       "-P " if file else "",
-      "" if simulate or not backup else "-b --suffix='~~' -hh --stats ",  # 1024 units
+      ("-b --suffix='~~' " if backup else "") + ("" if simulate else "-hh --stats "),  # using SI-units
       "-c" if checksum else "",
       " ".join("--exclude='%s/' --filter='P %s'" % (de, de) for de in DEXCLUDE),
       source,
@@ -127,12 +127,14 @@ def constructCommand(simulate, stats = False):  # -m prune empty dir chains from
 
 # Main script code
 if __name__ == '__main__':
-  if len(sys.argv) < 2 or '--help' in sys.argv or '-' in sys.argv: print("""rsyncr  (C) Arne Bachmann 2017-2020
+  if len(sys.argv) < 2 or '--help' in sys.argv or '-' in sys.argv: print(r"""rsyncr  (C) Arne Bachmann 2017-2020
     This rsync-wrapper simplifies backing up the current directory tree.
 
     Syntax:  rsyncr <target-path> [options]
 
-    Path is either a local folder /path or Drive:\\path  or a remote path [rsync://][user@]host:/path
+    target-path is either a local folder /path or Drive:\path  or a remote path [rsync://][user@]host:/path
+      using letter:    will use the drive's current folder (Windows only)
+      using letter:\~  will use full source path on target
 
     Copy mode options (default: update):
       --add                -a  Copy only additional files (otherwise update modified files)
@@ -201,13 +203,15 @@ if __name__ == '__main__':
     remote = user + "@" + host
     target = remote + ":" + path  # TODO this simply reconstructs what ws deconstructed above, right?
   else:  # local mode
-    if not os.path.exists(sys.argv[1]): raise Exception("Target folder doesn't exist. Create manually first to sync. Avoids bad surprises")
-    if sys.argv[1].strip().endswith(":"):  # just a drive letter - meaning current folder of that drive! otherwise use drive + backslash (D:\)
+    if sys.argv[1].strip().endswith(":"):  # just a drive letter - meaning currently selected folder of that drive! otherwise use drive + backslash (D:\)
       olddrive = os.path.abspath(os.getcwd())
       os.chdir(sys.argv[1])    # change drive
       drivepath = os.getcwd()  # get current folder on that drive
       os.chdir(olddrive)       # change back
     else: drivepath = sys.argv[1]
+    if drivepath.endswith("%s~" % os.sep) and sys.platform == "win32":
+      drivepath = drivepath[0] + os.getcwd()[1:]  # common = os.path.commonpath(("A%s" % os.getcwd()[1:], "A%s" % drivepath[1:]))
+    if not os.path.exists(drivepath): raise Exception("Target folder doesn't exist. Create it manually to sync. This avoids bad surprises!")
     target = cygwinify(os.path.abspath(drivepath))
 
   try:
@@ -326,7 +330,7 @@ if __name__ == '__main__':
       selection = input("""Options:
   show (a)dded (%d), (c)hanged (%d), (r)emoved (%d), (m)oved files (%d), (A)dded (%d) or (M)oved (%d) folders
   (y) - continue
-  otherwise: exit.\n  => """ % (len(added), len(modified), len(removes), len(potentialMoves), len(newdirs), len(potentialMoveDirs))).strip()
+  Enter: exit.\n  => """ % (len(added), len(modified), len(removes), len(potentialMoves), len(newdirs), len(potentialMoveDirs))).strip()
       if   selection == "a": print("\n".join("  " + add for add in added))
       elif selection == "c": print("\n".join("  > " + mod for mod in sorted(modified)))
       elif selection == "r": print("\n".join("  " + rem for rem in sorted(removes)))
