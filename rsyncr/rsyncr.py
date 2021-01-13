@@ -1,7 +1,6 @@
 # rsync wrapper script that supports humans in detecting dangerous changes to a folder structure synchronization.
 # The script highlights the main changes and detects potential unwanted file deletions, while hinting to moved files that might correspond to a folder rename or move.
 
-# TODO --ask -i doesn't wait and ask
 # TODO copying .git folders (or any dot-folders?) changes the owner and access rights! This leads to problems on consecutive syncs
 
 # rsync status output explanation:
@@ -331,9 +330,9 @@ if __name__ == '__main__':
       sys.exit(0)
     while ask:
       selection = (print if simulate else input)("""Options:
-  show (a)dded (%d), (c)hanged (%d), (r)emoved (%d), (m)oved files (%d), (A)dded (%d) or (M)oved (%d) folders
+  show (a)dded (%d), (c)hanged (%d), (r)emoved (%d), (m)oved files (%d), (A)dded (%d:%d) or (M)oved (%d) folders:files
   (y) - continue
-  Enter: exit.\n  => """ % (len(added), len(modified), len(removes), len(potentialMoves), len(newdirs), len(potentialMoveDirs))).strip()
+  Enter: exit.\n  => """ % (len(added), len(modified), len(removes), len(potentialMoves), len(newdirs), sum(len(_) for _ in newdirs.values()), len(potentialMoveDirs))).strip()
 
       if   selection == "a": print("\n".join("  " + add for add in added))
       elif selection == "c": print("\n".join("  > " + mod for mod in sorted(modified)))
