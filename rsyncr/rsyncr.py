@@ -119,8 +119,8 @@ def constructCommand(simulate, stats = False):  # -m prune empty dir chains from
       "-P " if file else "",
       ("-b --suffix='~~' " if backup else "") + ("" if simulate else "-hh --stats "),  # using SI-units
       "-c" if checksum else "",
-      " ".join("--exclude='%s'  --filter='P %s'" % (fe, fe) for fe in FEXCLUDE) +
-      " ".join("--exclude='%s/' --filter='P %s'" % (de, de) for de in DEXCLUDE),  # P = exclude from deletion, meaning not copied, but also not removed it exists only in target.
+      " ".join("--exclude='%s' --filter='P %s' "   % (fe, fe) for fe in FEXCLUDE) +
+      " ".join("--exclude='%s/' --filter='P %s/' " % (de, de) for de in DEXCLUDE),  # P = exclude from deletion, meaning not copied, but also not removed it exists only in target.
       source,
       target
     )
@@ -260,7 +260,10 @@ if __name__ == '__main__':
   if not force_foldername and os.path.basename(source[:-1]).lower() != os.path.basename(target[:-1]).lower():
     raise Exception("Are you sure you want to synchronize from %r to %r using different folder names? Use --force-foldername or -f if yes" % (os.path.basename(source[:-1]), os.path.basename(target[:-1])))  # TODO D: to E: raises warning as well
   if file: source += file  # combine source folder (with trailing slash) with file name
-  if verbose: print("Operation: %s%s from %s to %s" % ("SIMULATE " if simulate else "", "ADD" if add else ("UPDATE" if not sync else ("SYNC" if not override else "COPY")), source, target))
+  if verbose:
+    print("Operation: %s%s" % ("SIMULATE " if simulate else "", "ADD" if add else ("UPDATE" if not sync else ("SYNC" if not override else "COPY"))))
+    print("Source: " + source)
+    print("Target: " + target)
 
 
   # Determine total file size
