@@ -45,6 +45,7 @@ time_start = time.time()
 MAX_MOVE_DIRS = 2      # don't display more than this number of potential directory moves
 MAX_EDIT_DISTANCE = 5  # insertions/deletions/replacements (and also moves for damerau-levenshtein)
 QUOTE = '"' if sys.platform == "win32" else ""
+FEXCLUDE = ['*~~']  # ~~to avoid further copying of previous backups
 DEXCLUDE = ['catalog Previews.lrdata', '.redundir', '$RECYCLE.BIN', 'System Volume Information']
 
 # Rsync output classification helpers
@@ -118,7 +119,8 @@ def constructCommand(simulate, stats = False):  # -m prune empty dir chains from
       "-P " if file else "",
       ("-b --suffix='~~' " if backup else "") + ("" if simulate else "-hh --stats "),  # using SI-units
       "-c" if checksum else "",
-      " ".join("--exclude='%s/' --filter='P %s'" % (de, de) for de in DEXCLUDE),
+      " ".join("--exclude='%s'  --filter='P %s'" % (fe, fe) for fe in FEXCLUDE) +
+      " ".join("--exclude='%s/' --filter='P %s'" % (de, de) for de in DEXCLUDE),  # P = exclude from deletion, meaning not copied, but also not removed it exists only in target.
       source,
       target
     )
@@ -126,7 +128,7 @@ def constructCommand(simulate, stats = False):  # -m prune empty dir chains from
 
 # Main script code
 if __name__ == '__main__':
-  if len(sys.argv) < 2 or '--help' in sys.argv or '-' in sys.argv: print(r"""rsyncr  (C) Arne Bachmann 2017-2020
+  if len(sys.argv) < 2 or '--help' in sys.argv or '-' in sys.argv: print(r"""rsyncr  (C) Arne Bachmann 2017-2021
     This rsync-wrapper simplifies backing up the current directory tree.
 
     Syntax:  rsyncr <target-path> [options]
