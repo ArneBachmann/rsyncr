@@ -282,8 +282,13 @@ if __name__ == '__main__':
     totalfiles = int(line.split("Number of files: ")[1].split(" (")[0].replace(",", ""))
     line = [l for l in lines if l.startswith("Total file size:")][0]
     totalbytes = int(line.split("Total file size: ")[1].split(" bytes")[0].replace(",", ""))
-    print("\nEstimated minutes for %d entries: %.1f (SSD) %.1f (HDD) %.1f (Ethernet) %.1f (USB3)" % (totalfiles, totalbytes / (60 * 130 * MB), totalbytes / (60 * 60 * MB), totalbytes / (60 * 12.5 * MB), totalbytes / (60 * 0.4 * MB)))
-    input("Hit Enter to continue.")
+    print("\nEstimated run time for %d entries: %.1f (SSD) %.1f (HDD) %.1f (Ethernet) %.1f (USB3.0)" % (
+      totalfiles,
+      totalbytes / (60 * 130 * MB),   # SSD
+      totalbytes / (60 * 60 * MB),    # HDD
+      totalbytes / (60 * 12.5 * MB),  # 100Mbit/s
+      totalbytes / (60 * 0.4 * MB)))  # USB 3.0
+    if not ask: input("Hit Enter to continue.")
 
   # Simulation rsync run
   if not file and (simulate or not add):  # only simulate in multi-file mode. in add-only mode we need not check for conflicts
@@ -298,7 +303,7 @@ if __name__ == '__main__':
         try: lines[_line] = lines[_line].decode("utf-8" if sys.stdout.encoding != "utf-8" else "cp1252")
         except Exception as E: print("Error: could not decode STDOUT output using encoding %r or cp1252" % sys.stdout.encoding); import pdb; pdb.set_trace()
     entries = [parseLine(line) for line in lines if line != ""]  # parse itemized information
-    entries = [entry for entry in entries if entry.path != "" and not entry.path.endswith(".corrupdetect")]  # throw out all parent folders (TODO might require makedirs())
+    entries = [entry for entry in entries if entry.path != ""]  # throw out all parent folders (TODO might require makedirs())
 
     # Detect files belonging to newly create directories - can be ignored regarding removal or moving
     newdirs = {entry.path: [e.path for e in entries if e.path.startswith(entry.path) and e.type == "file"] for entry in entries if entry.newdir}  # associate dirs with contained files
