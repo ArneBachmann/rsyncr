@@ -3,6 +3,7 @@
 
 # TODO copying .git folders (or any dot-folders?) changes the owner and access rights! This leads to problems on consecutive syncs
 
+
 # rsync status output explanation:
 #   Source: https://stackoverflow.com/questions/4493525/rsync-what-means-the-f-on-rsync-logs
 #   1: > received,  . unchanged or modified (cf. below), c local change, * message, e.g. deleted, h hardlink, * = message following (no path)
@@ -18,6 +19,7 @@
 #   11: x extended attributes (as above)
 
 # rsync options:
+#  https://linux.die.net/man/1/rsync
 #   -r  --recursive  recursive
 #   -R  --relative   preserves full path
 #   -u  --update     skip files newer in target (to avoid unnecessary write operations)
@@ -42,10 +44,11 @@ time_start = time.time()
 
 
 # Constants
-MAX_MOVE_DIRS = 2      # don't display more than this number of potential directory moves
+MAX_MOVE_DIRS     = 2  # don't display more than this number of potential directory moves
 MAX_EDIT_DISTANCE = 5  # insertions/deletions/replacements (and also moves for damerau-levenshtein)
+MB                = 1024 << 10
 QUOTE = '"' if sys.platform == "win32" else ""
-FEXCLUDE = ['*~~']  # ~~to avoid further copying of previous backups
+FEXCLUDE = ['*~~'] + ([".corruptdetect"] if '--with-checksums' not in sys.argv else [])  # ~~to avoid further copying of previous backups
 DEXCLUDE = ['catalog Previews.lrdata', '.redundir', '$RECYCLE.BIN', 'System Volume Information']
 
 # Rsync output classification helpers
@@ -100,29 +103,32 @@ def parseLine(line):
   return FileState(state, entry, change, path[len(cwdParent):], newdir)
 
 
-def constructCommand(simulate, stats = False):  # -m prune empty dir chains from file list  -I copy even if size/mtime match
+def constructCommand(simulate, stats = False):  # TODO -m prune empty dir chains from file list
   ''' Warning: Consults global variables. '''
-  if stats:  # TODO not accurate as missing ignores etc,
-    return '%s%s%s' % (QUOTE, rsyncPath, QUOTE) + " -n --stats %s%s '%s' '%s'" % (
-        "-r " if not flat and not file else "",
-        "--ignore-existing " if add else ("-I " if override else "-u "),
-        source,
-        target
+  if stats:  # TODO not accurate as missing ignores etc
+    return f'{QUOTE}{rsyncPath}{QUOTE}' +
+           " -n --stats {rec}%s '{source}' '{target}'".format(
+        rec = "-r " if not flat and not file else "",
+        addmode = "--ignore-existing " if add else ("-I " if override else "-u "),  # -I ignore-times (size only)
+        source = source,
+        target = target
       )
 
-  return '%s%s%s' % (QUOTE, rsyncPath, QUOTE) + " %s%s%s%s%s%s%s%s -i -t --no-i-r %s '%s' '%s'" % (  # -t keep times, -i itemize
-      "-n " if simulate else ("--info=progress2 -h " if protocol >= 31 or rversion >= (3, 1) else ""),
-      "-r " if not flat and not file else "",  # TODO allow flat with --delete
-      "--ignore-existing " if add else ("-I " if override else "-u "),  # -u only copy if younger, --ignore-existing only copy additional files (vs. --existing: don't add new files)
-      "--delete-after --prune-empty-dirs --delete-excluded " if sync else "",
-      "-S -z --compress-level=9 " if compress else "",
-      "-P " if file else "",
-      ("-b --suffix='~~' " if backup else "") + ("" if simulate else "-hh --stats "),  # using SI-units
-      "-c" if checksum else "",
-      " ".join("--exclude='%s' --filter='P %s' "   % (fe, fe) for fe in FEXCLUDE) +
-      " ".join("--exclude='%s/' --filter='P %s/' " % (de, de) for de in DEXCLUDE),  # P = exclude from deletion, meaning not copied, but also not removed it exists only in target.
-      source,
-      target
+  return f'{QUOTE}{rsyncPath}{QUOTE}' +
+         " {sim}{rec}{addmode}{delmode}{comp}{part}{bacmode}{units}{check} -i -t --no-i-r {exclude} '{source}' '{target}'".format(  # -t keep times, -i itemize
+        sim     = "-n " if simulate else ("--info=progress2 -h " if protocol >= 31 or rversion >= (3, 1) else ""),
+        rec     = "-r " if not flat and not file else "",  # TODO allow flat with --delete
+        addmode = "--ignore-existing " if add else ("-I " if override else "-u "),  # --ignore-existing only copy additional files (vs. --existing: don't add new files) -u only copy if younger -I ignore times
+        delmode = "--delete-after --prune-empty-dirs --delete-excluded " if sync else "",
+        comp    = "-S -z --compress-level=9 " if compress else "",
+        part    = "-P " if file else "",  # -P = --partial --progress
+        bacmode = ("-b --suffix='~~' " if backup else ""),
+        units   = ("" if simulate else "-hh --stats "),  # using SI-units
+        check   = "-c" if checksum else "",
+        exclude = " ".join("--exclude='%s' --filter='P %s' "   % (fe, fe) for fe in FEXCLUDE) +
+                  " ".join("--exclude='%s/' --filter='P %s/' " % (de, de) for de in DEXCLUDE),  # P = exclude from deletion, meaning not copied, but also not removed it exists only in target.
+        source = source,
+        target = target
     )
 
 
@@ -158,22 +164,25 @@ if __name__ == '__main__':
       --compress   -c  Compress data during transport, handle many files better
       --verbose    -v  Show more output
       --help       -h  Show this information
+
+    Special options:
+      --with-checksums  corrupDetect compatibility: if set, .corrupdetect files are not ignored
   """); sys.exit(0)
 
   # Parse program options
-  add = '--add' in sys.argv or '-a' in sys.argv
-  sync = '--sync' in sys.argv or '-s' in sys.argv
-  simulate = '--simulate' in sys.argv or '-n' in sys.argv
-  force_foldername = '--force-foldername' in sys.argv or '-f' in sys.argv
-  force = '--force' in sys.argv or '-y' in sys.argv
-  ask = '--ask' in sys.argv or '-i' in sys.argv
-  flat = '--flat' in sys.argv or '-1' in sys.argv
-  compress = '--compress' in sys.argv or '-c' in sys.argv
-  verbose = '--verbose' in sys.argv or '-v' in sys.argv
-  backup = '--backup' in sys.argv
+  add      = '--add'        in sys.argv or '-a' in sys.argv
+  sync     = '--sync'       in sys.argv or '-s' in sys.argv
+  simulate = '--simulate'   in sys.argv or '-n' in sys.argv
+  force    = '--force'      in sys.argv or '-y' in sys.argv
+  ask      = '--ask'        in sys.argv or '-i' in sys.argv
+  flat     = '--flat'       in sys.argv or '-1' in sys.argv
+  compress = '--compress'   in sys.argv or '-c' in sys.argv
+  verbose  = '--verbose'    in sys.argv or '-v' in sys.argv
+  checksum = '--checksum'   in sys.argv or '-C' in sys.argv
+  backup   = '--backup'     in sys.argv
   override = '--force-copy' in sys.argv
-  estimate = '--estimate' in sys.argv
-  checksum = '--checksum' in sys.argv or '-C' in sys.argv
+  estimate = '--estimate'   in sys.argv
+  force_foldername = '--force-foldername' in sys.argv or '-f' in sys.argv
 
   # Source handling
   file = sys.argv[sys.argv.index('--file') + 1] if '--file' in sys.argv else None
@@ -274,7 +283,6 @@ if __name__ == '__main__':
   print("Detected rsync version %d.%d.x  protocol %d" % (rversion[0], rversion[1], protocol))
 
   if estimate:
-    MB = 1024 << 10
     command = constructCommand(simulate = True, stats = True)
     if verbose: print("\nAnalyzing: %s" % command)
     lines = subprocess.Popen(command, shell = True, bufsize = 1, stdout = subprocess.PIPE, stderr = sys.stderr).communicate()[0].decode(sys.stdout.encoding).replace("\r\n", "\n").split("\n")
@@ -284,10 +292,10 @@ if __name__ == '__main__':
     totalbytes = int(line.split("Total file size: ")[1].split(" bytes")[0].replace(",", ""))
     print("\nEstimated run time for %d entries: %.1f (SSD) %.1f (HDD) %.1f (Ethernet) %.1f (USB3.0)" % (
       totalfiles,
-      totalbytes / (60 * 130 * MB),   # SSD
-      totalbytes / (60 * 60 * MB),    # HDD
+      totalbytes / (60 *  130 * MB),   # SSD
+      totalbytes / (60 *   60 * MB),    # HDD
       totalbytes / (60 * 12.5 * MB),  # 100Mbit/s
-      totalbytes / (60 * 0.4 * MB)))  # USB 3.0
+      totalbytes / (60 *  0.4 * MB)))  # USB 3.0
     if not ask: input("Hit Enter to continue.")
 
   # Simulation rsync run
@@ -327,11 +335,11 @@ if __name__ == '__main__':
 
 
     # User interaction
-    if len(added) > 0:             print("%-5s added files" % len(added))
-    if len(modified) > 0:          print("%-5s chngd files" % len(modified))
-    if len(removes) > 0:           print("%-5s remvd entries" % len(removes))
-    if len(potentialMoves) > 0:    print("%-5s moved files (maybe)" % len(potentialMoves))
-    if len(newdirs) > 0:           print("%-5s Added dirs (including %d files)" % (len(newdirs), sum([len(files) for files in newdirs.values()])))
+    if len(added)             > 0: print("%-5s added files"   % len(added))
+    if len(modified)          > 0: print("%-5s chngd files"   % len(modified))
+    if len(removes)           > 0: print("%-5s remvd entries" % len(removes))
+    if len(potentialMoves)    > 0: print("%-5s moved files (maybe)" % len(potentialMoves))
+    if len(newdirs)           > 0: print("%-5s Added dirs (including %d files)" % (len(newdirs), sum([len(files) for files in newdirs.values()])))
     if len(potentialMoveDirs) > 0: print("%-5s Moved dirs (maybe) " % len(potentialMoveDirs))
     if not (added or newdirs or modified or removes):
       print("Nothing to do.")
