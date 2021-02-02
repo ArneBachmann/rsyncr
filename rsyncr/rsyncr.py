@@ -50,6 +50,7 @@ MB                = 1024 << 10
 QUOTE = '"' if sys.platform == "win32" else ""
 FEXCLUDE = ['*~~'] + ([".corruptdetect"] if '--with-checksums' not in sys.argv else [])  # ~~to avoid further copying of previous backups
 DEXCLUDE = ['catalog Previews.lrdata', '.redundir', '$RECYCLE.BIN', 'System Volume Information']
+DEXCLUDE = ['.redundir', '.imagesubsort_cache', '.imagesubsort_trash', '$RECYCLE.BIN', 'System Volume Information', 'catalog Previews.lrdata']
 
 # Rsync output classification helpers
 State =  {".": "unchanged", ">": "store", "c": "changed", "<": "restored", "*": "message"}  # rsync output marker detection
@@ -106,7 +107,7 @@ def parseLine(line):
 def constructCommand(simulate, stats = False):  # TODO -m prune empty dir chains from file list
   ''' Warning: Consults global variables. '''
   if stats:  # TODO not accurate as missing ignores etc
-    return f'{QUOTE}{rsyncPath}{QUOTE}' +
+    return f'{QUOTE}{rsyncPath}{QUOTE}' + \
            " -n --stats {rec}%s '{source}' '{target}'".format(
         rec = "-r " if not flat and not file else "",
         addmode = "--ignore-existing " if add else ("-I " if override else "-u "),  # -I ignore-times (size only)
@@ -114,7 +115,7 @@ def constructCommand(simulate, stats = False):  # TODO -m prune empty dir chains
         target = target
       )
 
-  return f'{QUOTE}{rsyncPath}{QUOTE}' +
+  return f'{QUOTE}{rsyncPath}{QUOTE}' + \
          " {sim}{rec}{addmode}{delmode}{comp}{part}{bacmode}{units}{check} -i -t --no-i-r {exclude} '{source}' '{target}'".format(  # -t keep times, -i itemize
         sim     = "-n " if simulate else ("--info=progress2 -h " if protocol >= 31 or rversion >= (3, 1) else ""),
         rec     = "-r " if not flat and not file else "",  # TODO allow flat with --delete
