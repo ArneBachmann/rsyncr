@@ -37,10 +37,9 @@
 
 
 # Standard modules
-import collections, os, subprocess, sys, time
-if sys.version_info.major == 2: input = raw_input  # noqa: F821
-else: from functools import reduce
+import collections, functools, os, subprocess, sys, time
 time_start = time.time()
+assert sys.version_info >= (3, 6)
 
 
 # Constants
@@ -49,8 +48,7 @@ MAX_EDIT_DISTANCE = 5  # insertions/deletions/replacements (and also moves for d
 MB                = 1024 << 10
 QUOTE = '"' if sys.platform == "win32" else ""
 FEXCLUDE = ['*~~'] + ([".corruptdetect"] if '--with-checksums' not in sys.argv else [])  # ~~to avoid further copying of previous backups
-DEXCLUDE = ['catalog Previews.lrdata', '.redundir', '$RECYCLE.BIN', 'System Volume Information']
-DEXCLUDE = ['.redundir', '.imagesubsort_cache', '.imagesubsort_trash', '$RECYCLE.BIN', 'System Volume Information', 'catalog Previews.lrdata']
+DEXCLUDE = ['.redundir', '.imagesubsort_cache', '.imagesubsort_trash', '$RECYCLE.BIN', 'System Volume Information', 'Recovery', 'catalog Previews.lrdata']
 
 # Rsync output classification helpers
 State =  {".": "unchanged", ">": "store", "c": "changed", "<": "restored", "*": "message"}  # rsync output marker detection
@@ -60,8 +58,8 @@ FileState = collections.namedtuple("FileState", ["state", "type", "change", "pat
 
 
 # Utility functions
-def xany(pred, lizt): return reduce(lambda a, b: a or  pred(b), lizt if hasattr(lizt, '__iter__') else list(lizt), False)
-def xall(pred, lizt): return reduce(lambda a, b: a and pred(b), lizt if hasattr(lizt, '__iter__') else list(lizt), True)
+def xany(pred, lizt): return functools.reduce(lambda a, b: a or  pred(b), lizt if hasattr(lizt, '__iter__') else list(lizt), False)
+def xall(pred, lizt): return functools.reduce(lambda a, b: a and pred(b), lizt if hasattr(lizt, '__iter__') else list(lizt), True)
 
 
 # Conditional function definition for cygwin under Windows
@@ -99,7 +97,7 @@ def parseLine(line):
   path = cygwinify(os.path.abspath(path))
   newdir = atts[:2] == "cd" and xall(lambda _: _ == "+", atts[2:])
   if state == "message" and atts[1:] == "deleting": state = "deleted"
-  try: assert path.startswith(cwdParent + "/")
+  try: assert path.startswith(cwdParent + "/") or path == cwdParent
   except: raise Exception(f"Wrong path prefix: {path} vs {cwdParent}")
   return FileState(state, entry, change, path[len(cwdParent):], newdir)
 
