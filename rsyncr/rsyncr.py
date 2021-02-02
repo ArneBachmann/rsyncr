@@ -100,7 +100,7 @@ def parseLine(line):
   newdir = atts[:2] == "cd" and xall(lambda _: _ == "+", atts[2:])
   if state == "message" and atts[1:] == "deleting": state = "deleted"
   try: assert path.startswith(cwdParent + "/")
-  except: raise Exception("Wrong path prefix: %s vs %s " % (path, cwdParent))
+  except: raise Exception(f"Wrong path prefix: {path} vs {cwdParent}")
   return FileState(state, entry, change, path[len(cwdParent):], newdir)
 
 
@@ -126,8 +126,8 @@ def constructCommand(simulate, stats = False):  # TODO -m prune empty dir chains
         bacmode = ("-b --suffix='~~' " if backup else ""),
         units   = ("" if simulate else "-hh --stats "),  # using SI-units
         check   = "-c" if checksum else "",
-        exclude = " ".join("--exclude='%s' --filter='P %s' "   % (fe, fe) for fe in FEXCLUDE) +
-                  " ".join("--exclude='%s/' --filter='P %s/' " % (de, de) for de in DEXCLUDE),  # P = exclude from deletion, meaning not copied, but also not removed it exists only in target.
+        exclude = " ".join(f"--exclude='{fe}' --filter='P {fe}' "   for fe in FEXCLUDE) +
+                  " ".join(f"--exclude='{de}/' --filter='P {de}/' " for de in DEXCLUDE),  # P = exclude from deletion, meaning not copied, but also not removed it exists only in target.
         source = source,
         target = target
     )
@@ -220,9 +220,9 @@ if __name__ == '__main__':
       drivepath = os.getcwd()  # get current folder on that drive
       os.chdir(olddrive)       # change back
     else: drivepath = sys.argv[1]
-    if drivepath.endswith("%s~" % os.sep) and sys.platform == "win32":
+    if drivepath.endswith(f"{os.sep}~") and sys.platform == "win32":
       drivepath = drivepath[0] + os.getcwd()[1:]  # common = os.path.commonpath(("A%s" % os.getcwd()[1:], "A%s" % drivepath[1:]))
-    if not os.path.exists(drivepath): raise Exception("Target folder doesn't exist. Create it manually to sync. This avoids bad surprises!")
+    if not os.path.exists(drivepath): raise Exception(f"Target folder '{drivepath}' doesn't exist. Create it manually to sync. This avoids bad surprises!")
     target = cygwinify(os.path.abspath(drivepath))
 
   try:
@@ -266,18 +266,18 @@ if __name__ == '__main__':
   if not remote:
     diff = os.path.relpath(target, source)
     if diff != "" and not diff.startswith(".."):
-      raise Exception("Cannot copy to parent folder of source! Relative path: .%s%s" % (os.sep, diff))
+      raise Exception(f"Cannot copy to parent folder of source! Relative path: .{os.sep}{diff}")
   if not force_foldername and os.path.basename(source[:-1]).lower() != os.path.basename(target[:-1]).lower():
-    raise Exception("Are you sure you want to synchronize from %r to %r using different folder names? Use --force-foldername or -f if yes" % (os.path.basename(source[:-1]), os.path.basename(target[:-1])))  # TODO D: to E: raises warning as well
+    raise Exception(f"Are you sure you want to synchronize from '{source}' to '{target}' using different folder names? Use --force-foldername or -f if yes")  # TODO E: to F: shows also warning
   if file: source += file  # combine source folder (with trailing slash) with file name
   if verbose:
     print("Operation: %s%s" % ("SIMULATE " if simulate else "", "ADD" if add else ("UPDATE" if not sync else ("SYNC" if not override else "COPY"))))
-    print("Source: " + source)
-    print("Target: " + target)
+    print(f"Source: {source}")
+    print(f"Target: {target}")
 
 
   # Determine total file size
-  rversion = subprocess.Popen("%s%s%s --version" % (QUOTE, rsyncPath, QUOTE), shell = True, bufsize = 1, stdout = subprocess.PIPE, stderr = sys.stderr).communicate()[0].decode(sys.stdout.encoding).replace("\r\n", "\n").split("\n")[0]
+  rversion = subprocess.Popen(f"{QUOTE}{rsyncPath}{QUOTE} --version", shell = True, bufsize = 1, stdout = subprocess.PIPE, stderr = sys.stderr).communicate()[0].decode(sys.stdout.encoding).replace("\r\n", "\n").split("\n")[0]
   protocol = int(rversion.split("protocol version ")[1])
   assert rversion.startswith("rsync"), "Cannot determine rsync version: " + rversion  # e.g. rsync  version 3.0.4  protocol version 30)
   rversion = tuple([int(_) for _ in rversion.split("version ")[1].split(" ")[0].split(".")[:2]])
@@ -285,7 +285,7 @@ if __name__ == '__main__':
 
   if estimate:
     command = constructCommand(simulate = True, stats = True)
-    if verbose: print("\nAnalyzing: %s" % command)
+    if verbose: print(f"\nAnalyzing: {command}")
     lines = subprocess.Popen(command, shell = True, bufsize = 1, stdout = subprocess.PIPE, stderr = sys.stderr).communicate()[0].decode(sys.stdout.encoding).replace("\r\n", "\n").split("\n")
     line = [l for l in lines if l.startswith("Number of files:")][0]
     totalfiles = int(line.split("Number of files: ")[1].split(" (")[0].replace(",", ""))
@@ -302,7 +302,7 @@ if __name__ == '__main__':
   # Simulation rsync run
   if not file and (simulate or not add):  # only simulate in multi-file mode. in add-only mode we need not check for conflicts
     command = constructCommand(simulate = True)
-    if verbose: print("\nSimulating: %s" % command)
+    if verbose: print(f"\nSimulating: {command}")
     so = subprocess.Popen(command, shell = True, bufsize = 1, stdout = subprocess.PIPE, stderr = sys.stderr).communicate()[0]
     lines = so.replace(b"\r\n", b"\n").split(b"\n")
     for _line in range(len(lines)):  # decode each line independently in case there are different encodings
@@ -331,7 +331,7 @@ if __name__ == '__main__':
     potentialMoveDirs = {}
     if '--add' not in sys.argv and '--skip-move' not in sys.argv and '--skip-moves' not in sys.argv:
       if verbose: print("Computing potential directory moves")  # HINT: a check if all removed files can be found in a new directory cannot be done, as we only that that a directory has been deleted, but nothing about its files
-      potentialMoveDirs = {delname: ", ".join(["%s:%d" % (_[1], _[0]) for _ in sorted([(distance(os.path.basename(addname), os.path.basename(delname)), addname) for addname in newdirs.keys()]) if _[0] < MAX_EDIT_DISTANCE][:MAX_MOVE_DIRS]) for delname in list(potentialMoves.keys()) + removes}
+      potentialMoveDirs = {delname: ", ".join([f"{_[1]}:{_[0]}" for _ in sorted([(distance(os.path.basename(addname), os.path.basename(delname)), addname) for addname in newdirs.keys()]) if _[0] < MAX_EDIT_DISTANCE][:MAX_MOVE_DIRS]) for delname in list(potentialMoves.keys()) + removes}
       potentialMoveDirs = {k: v for k, v in potentialMoveDirs.items() if v != ""}
 
 
@@ -348,17 +348,18 @@ if __name__ == '__main__':
       if verbose: print("Finished after %.1f minutes." % ((time.time() - time_start) / 60.))
       sys.exit(0)
     while ask:
-      selection = (print if simulate else input)("""Options:
-  show (a)dded (%d), (c)hanged (%d), (r)emoved (%d), (m)oved files (%d), (A)dded (%d:%d) or (M)oved (%d) folders:files
+      selection = input(f"""Options:
+  show (a)dded ({len(added)}), (c)hanged ({len(modified)}), (r)emoved ({len(removes)}), (m)oved files ({len(potentialMoves)}), (A)dded ({len(newdirs)}:%d) or (M)oved ({len(potentialMoveDirs)}) folders:files
   (y) - continue
-  Enter: exit.\n  => """ % (len(added), len(modified), len(removes), len(potentialMoves), len(newdirs), sum(len(_) for _ in newdirs.values()), len(potentialMoveDirs))).strip()
+  Enter: exit.\n  => """ % sum(len(_) for _ in newdirs.values())).strip()
 
       if   selection == "a": print("\n".join("  " + add for add in added))
+      elif selection == "t": print("\n".join("  " + add for add in sorted(added, key = lambda a: (a[a.rindex("."):] if "." in a else a) + a)))  # by file type
       elif selection == "c": print("\n".join("  > " + mod for mod in sorted(modified)))
       elif selection == "r": print("\n".join("  " + rem for rem in sorted(removes)))
-      elif selection == "m": print("\n".join("  %s -> %s" % (_from, _tos) for _from, _tos in sorted(potentialMoves.items())))
-      elif selection == "A": print("\n".join("DIR " + folder + " (%d files)" % len(files) + ("\n    " + "\n    ".join(files) if len(files) > 0 else "") for folder, files in sorted(newdirs.items())))
-      elif selection == "M": print("\n".join("  %s -> %s" % (_from, _tos) for _from, _tos in sorted(potentialMoveDirs.items())))
+      elif selection == "m": print("\n".join(f"  {_from} -> {_tos}" for _from, _tos in sorted(potentialMoves.items())))
+      elif selection == "M": print("\n".join(f"  {_from} -> {_tos}" for _from, _tos in sorted(potentialMoveDirs.items())))
+      elif selection == "A": print("\n".join(f"DIR {folder} ({len(files)} files)" + ("\n    " + "\n    ".join(files) if len(files) > 0 else "") for folder, files in sorted(newdirs.items())))
       elif selection == "y": force = True; break
       else: sys.exit(1)
 
