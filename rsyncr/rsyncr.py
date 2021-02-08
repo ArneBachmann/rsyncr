@@ -38,8 +38,8 @@
 
 # Standard modules
 import collections, functools, os, subprocess, sys, time
+assert sys.version_info >= (3, 6)  # ensures maximum roundtrip chances
 time_start = time.time()
-assert sys.version_info >= (3, 6)
 
 
 # Constants
@@ -275,7 +275,7 @@ if __name__ == '__main__':
 
 
   # Determine total file size
-  rversion = subprocess.Popen(f"{QUOTE}{rsyncPath}{QUOTE} --version", shell = True, bufsize = 1, stdout = subprocess.PIPE, stderr = sys.stderr).communicate()[0].decode(sys.stdout.encoding).replace("\r\n", "\n").split("\n")[0]
+  rversion = subprocess.Popen(f"{QUOTE}{rsyncPath}{QUOTE} --version", shell = True, stdout = subprocess.PIPE, stderr = sys.stderr).communicate()[0].decode(sys.stdout.encoding).replace("\r\n", "\n").split("\n")[0]
   protocol = int(rversion.split("protocol version ")[1])
   assert rversion.startswith("rsync"), "Cannot determine rsync version: " + rversion  # e.g. rsync  version 3.0.4  protocol version 30)
   rversion = tuple([int(_) for _ in rversion.split("version ")[1].split(" ")[0].split(".")[:2]])
@@ -284,13 +284,12 @@ if __name__ == '__main__':
   if estimate:
     command = constructCommand(simulate = True, stats = True)
     if verbose: print(f"\nAnalyzing: {command}")
-    lines = subprocess.Popen(command, shell = True, bufsize = 1, stdout = subprocess.PIPE, stderr = sys.stderr).communicate()[0].decode(sys.stdout.encoding).replace("\r\n", "\n").split("\n")
+    lines = subprocess.Popen(command, shell = True, stdout = subprocess.PIPE, stderr = sys.stderr).communicate()[0].decode(sys.stdout.encoding).replace("\r\n", "\n").split("\n")
     line = [l for l in lines if l.startswith("Number of files:")][0]
     totalfiles = int(line.split("Number of files: ")[1].split(" (")[0].replace(",", ""))
     line = [l for l in lines if l.startswith("Total file size:")][0]
     totalbytes = int(line.split("Total file size: ")[1].split(" bytes")[0].replace(",", ""))
-    print("\nEstimated run time for %d entries: %.1f (SSD) %.1f (HDD) %.1f (Ethernet) %.1f (USB3.0)" % (
-      totalfiles,
+    print(f"\nEstimated run time for {totalfiles} entries: %.1f (SSD) %.1f (HDD) %.1f (Ethernet) %.1f (USB3.0)" % (
       totalbytes / (60 *  130 * MB),   # SSD
       totalbytes / (60 *   60 * MB),    # HDD
       totalbytes / (60 * 12.5 * MB),  # 100Mbit/s
@@ -301,14 +300,14 @@ if __name__ == '__main__':
   if not file and (simulate or not add):  # only simulate in multi-file mode. in add-only mode we need not check for conflicts
     command = constructCommand(simulate = True)
     if verbose: print(f"\nSimulating: {command}")
-    so = subprocess.Popen(command, shell = True, bufsize = 1, stdout = subprocess.PIPE, stderr = sys.stderr).communicate()[0]
+    so = subprocess.Popen(command, shell = True, stdout = subprocess.PIPE, stderr = sys.stderr).communicate()[0]
     lines = so.replace(b"\r\n", b"\n").split(b"\n")
     for _line in range(len(lines)):  # decode each line independently in case there are different encodings
       try:
         lines[_line] = lines[_line].decode(sys.stdout.encoding)
       except Exception:
         try: lines[_line] = lines[_line].decode("utf-8" if sys.stdout.encoding != "utf-8" else "cp1252")
-        except Exception as E: print("Error: could not decode STDOUT output using encoding %r or cp1252" % sys.stdout.encoding); import pdb; pdb.set_trace()
+        except Exception as E: print(f"Error: could not decode STDOUT output using encoding '{sys.stdout.encoding}' or cp1252"); import pdb; pdb.set_trace()
     entries = [parseLine(line) for line in lines if line != ""]  # parse itemized information
     entries = [entry for entry in entries if entry.path != ""]  # throw out all parent folders (TODO might require makedirs())
 
@@ -372,7 +371,7 @@ if __name__ == '__main__':
 
   command = constructCommand(simulate = False)
   if verbose: print("\nExecuting: " + command)
-  subprocess.Popen(command, shell = True, bufsize = 1, stdout = sys.stdout, stderr = sys.stderr).wait()
+  subprocess.Popen(command, shell = True, stdout = sys.stdout, stderr = sys.stderr).wait()
 
   # Quit
   if verbose: print("Finished after %.1f minutes." % ((time.time() - time_start) / 60.))
