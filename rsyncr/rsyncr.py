@@ -355,10 +355,10 @@ if __name__ == '__main__':
   (y) - continue
   Enter: exit.\n  => """ % sum(len(_) for _ in newdirs.values())).strip()
 
-      if   selection == "a": print("\n".join("  " + add for add in added))
-      elif selection == "t": print("\n".join("  " + add for add in sorted(added, key = lambda a: (a[a.rindex("."):] if "." in a else a) + a)))  # by file type
+      if   selection == "a": print("\n".join("  "   + add for add in added))
+      elif selection == "t": print("\n".join("  "   + add for add in sorted(added, key = lambda a: (a[a.rindex("."):] if "." in a else a) + a)))  # by file type
       elif selection == "c": print("\n".join("  > " + mod for mod in sorted(modified)))
-      elif selection == "r": print("\n".join("  " + rem for rem in sorted(removes)))
+      elif selection == "r": print("\n".join("  "   + rem for rem in sorted(removes)))
       elif selection == "m": print("\n".join(f"  {_from} -> {_tos}" for _from, _tos in sorted(potentialMoves.items())))
       elif selection == "M": print("\n".join(f"  {_from} -> {_tos}" for _from, _tos in sorted(potentialMoveDirs.items())))
       elif selection == "A": print("\n".join(f"DIR {folder} ({len(files)} files)" + ("\n    " + "\n    ".join(files) if len(files) > 0 else "") for folder, files in sorted(newdirs.items())))
