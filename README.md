@@ -15,7 +15,7 @@ pip install rsyncr
 
 ## Usage ##
 
-```sh
+```text
 rsyncr <target-path> [options]
 ```
 
