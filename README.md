@@ -21,7 +21,7 @@ with options:
 Copy mode options (default: update):
   --add               -a  Copy only additional files (otherwise updating only younger files)
   --sync              -s  Remove files in target if removed in source, including empty folders
-  --simulate          n  Don't actually sync, stop after simulation
+  --simulate          -n  Don't actually sync, stop after simulation
   --force-foldername  -f  Sync even if target folder name differs
   --force             -y  Sync even if deletions or moved files have been detected
   --ask               -i  In case of dangerous operation, ask user interactively
