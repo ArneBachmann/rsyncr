@@ -38,8 +38,8 @@
 
 # Standard modules
 import collections, functools, os, subprocess, sys, time
+assert sys.version_info >= (3, 6)  # ensures maximum roundtrip chances
 time_start = time.time()
-assert sys.version_info >= (3, 6)
 
 
 # Constants
@@ -143,7 +143,7 @@ if __name__ == '__main__':
       using letter:\~  will use full source path on target
 
     Copy mode options (default: update):
-      --add                -a  Copy only additional files (otherwise update modified files)
+      --add                -a  Immediately copy only additional files (otherwise update modified files)
       --sync               -s  Remove files in target if removed in source, including empty folders
       --simulate           -n  Don't actually sync, stop after simulation
       --estimate               Estimate copy speed
@@ -187,9 +187,9 @@ if __name__ == '__main__':
   file = sys.argv[sys.argv.index('--file') + 1] if '--file' in sys.argv else None
   if file:
     del sys.argv[sys.argv.index('--file'):sys.argv.index('--file') + 2]
-    if not os.path.exists(file): raise Exception("File not found %r" % file)
+    if not os.path.exists(file): raise Exception(f"File not found '{file}'")
     file = file.replace("\\", "/")
-    print("Running in single file transfer mode for %r" % file)
+    print(f"Running in single file transfer mode for '{file}'")
     while len(file) > 0 and file[0] == '/': file = file[1:]
     while len(file) > 0 and file[-1] == '/': file = file[:-1]
 
@@ -202,7 +202,7 @@ if __name__ == '__main__':
     user = sys.argv[1].split("@")[0]
     sys.argv[1] = sys.argv[1].split("@")[1]
     remote = True
-  if user: print("Using remote account %r for login" % user)
+  if user: print(f"Using remote account '{user}' for login")
   remote = remote or ':' in sys.argv[1][2:]  # ignore potential drive letter separator (in local Windows paths)
   if remote:  # TODO use getpass library
     if not user: raise Exception("User name required for remote file upload")
@@ -274,28 +274,27 @@ if __name__ == '__main__':
     raise Exception(f"Are you sure you want to synchronize from '{source}' to '{target}' using different folder names? Use --force-foldername or -f if yes")  # TODO E: to F: shows also warning
   if file: source += file  # combine source folder (with trailing slash) with file name
   if verbose:
-    print("Operation: %s%s" % ("SIMULATE " if simulate else "", "ADD" if add else ("UPDATE" if not sync else ("SYNC" if not override else "COPY"))))
+    print(f"Operation: {'SIMULATE ' if simulate else ''}" + ("ADD" if add else ("UPDATE" if not sync else ("SYNC" if not override else "COPY"))))
     print(f"Source: {source}")
     print(f"Target: {target}")
 
 
   # Determine total file size
-  rversion = subprocess.Popen(f"{QUOTE}{rsyncPath}{QUOTE} --version", shell = True, bufsize = 1, stdout = subprocess.PIPE, stderr = sys.stderr).communicate()[0].decode(sys.stdout.encoding).replace("\r\n", "\n").split("\n")[0]
+  rversion = subprocess.Popen(f"{QUOTE}{rsyncPath}{QUOTE} --version", shell = True, stdout = subprocess.PIPE, stderr = sys.stderr).communicate()[0].decode(sys.stdout.encoding).replace("\r\n", "\n").split("\n")[0]
   protocol = int(rversion.split("protocol version ")[1])
   assert rversion.startswith("rsync"), "Cannot determine rsync version: " + rversion  # e.g. rsync  version 3.0.4  protocol version 30)
   rversion = tuple([int(_) for _ in rversion.split("version ")[1].split(" ")[0].split(".")[:2]])
-  print("Detected rsync version %d.%d.x  protocol %d" % (rversion[0], rversion[1], protocol))
+  print(f"Detected rsync version {rversion[0]}.{rversion[1]}.x  protocol {protocol}")
 
   if estimate:
     command = constructCommand(simulate = True, stats = True)
     if verbose: print(f"\nAnalyzing: {command}")
-    lines = subprocess.Popen(command, shell = True, bufsize = 1, stdout = subprocess.PIPE, stderr = sys.stderr).communicate()[0].decode(sys.stdout.encoding).replace("\r\n", "\n").split("\n")
+    lines = subprocess.Popen(command, shell = True, stdout = subprocess.PIPE, stderr = sys.stderr).communicate()[0].decode(sys.stdout.encoding).replace("\r\n", "\n").split("\n")
     line = [l for l in lines if l.startswith("Number of files:")][0]
     totalfiles = int(line.split("Number of files: ")[1].split(" (")[0].replace(",", ""))
     line = [l for l in lines if l.startswith("Total file size:")][0]
     totalbytes = int(line.split("Total file size: ")[1].split(" bytes")[0].replace(",", ""))
-    print("\nEstimated run time for %d entries: %.1f (SSD) %.1f (HDD) %.1f (Ethernet) %.1f (USB3.0)" % (
-      totalfiles,
+    print(f"\nEstimated run time for {totalfiles} entries: %.1f (SSD) %.1f (HDD) %.1f (Ethernet) %.1f (USB3.0)" % (
       totalbytes / (60 *  130 * MB),   # SSD
       totalbytes / (60 *   60 * MB),    # HDD
       totalbytes / (60 * 12.5 * MB),  # 100Mbit/s
@@ -306,14 +305,14 @@ if __name__ == '__main__':
   if not file and (simulate or not add):  # only simulate in multi-file mode. in add-only mode we need not check for conflicts
     command = constructCommand(simulate = True)
     if verbose: print(f"\nSimulating: {command}")
-    so = subprocess.Popen(command, shell = True, bufsize = 1, stdout = subprocess.PIPE, stderr = sys.stderr).communicate()[0]
+    so = subprocess.Popen(command, shell = True, stdout = subprocess.PIPE, stderr = sys.stderr).communicate()[0]
     lines = so.replace(b"\r\n", b"\n").split(b"\n")
     for _line in range(len(lines)):  # decode each line independently in case there are different encodings
       try:
         lines[_line] = lines[_line].decode(sys.stdout.encoding)
       except Exception:
         try: lines[_line] = lines[_line].decode("utf-8" if sys.stdout.encoding != "utf-8" else "cp1252")
-        except Exception as E: print("Error: could not decode STDOUT output using encoding %r or cp1252" % sys.stdout.encoding); import pdb; pdb.set_trace()
+        except Exception: print(f"Error: could not decode STDOUT output using encoding '{sys.stdout.encoding}' or cp1252"); import pdb; pdb.set_trace()
     entries = [parseLine(line) for line in lines if line != ""]  # parse itemized information
     entries = [entry for entry in entries if entry.path != ""]  # throw out all parent folders (TODO might require makedirs())
 
@@ -332,7 +331,7 @@ if __name__ == '__main__':
     added = [entry.path for entry in entries if entry.type == "file" and entry.state in ("store", "changed") and entry.path and not xany(lambda a: entry.path in a, potentialMoves.values())]  # latter is a weak check
     modified = [name for name in modified if name not in added]
     potentialMoveDirs = {}
-    if '--add' not in sys.argv and '--skip-move' not in sys.argv and '--skip-moves' not in sys.argv:
+    if not add and '--skip-move' not in sys.argv and '--skip-moves' not in sys.argv:
       if verbose: print("Computing potential directory moves")  # HINT: a check if all removed files can be found in a new directory cannot be done, as we only that that a directory has been deleted, but nothing about its files
       potentialMoveDirs = {delname: ", ".join([f"{_[1]}:{_[0]}" for _ in sorted([(distance(os.path.basename(addname), os.path.basename(delname)), addname) for addname in newdirs.keys()]) if _[0] < MAX_EDIT_DISTANCE][:MAX_MOVE_DIRS]) for delname in list(potentialMoves.keys()) + removes}
       potentialMoveDirs = {k: v for k, v in potentialMoveDirs.items() if v != ""}
@@ -377,7 +376,7 @@ if __name__ == '__main__':
 
   command = constructCommand(simulate = False)
   if verbose: print("\nExecuting: " + command)
-  subprocess.Popen(command, shell = True, bufsize = 1, stdout = sys.stdout, stderr = sys.stderr).wait()
+  subprocess.Popen(command, shell = True, stdout = sys.stdout, stderr = sys.stderr).wait()
 
   # Quit
   if verbose: print("Finished after %.1f minutes." % ((time.time() - time_start) / 60.))
