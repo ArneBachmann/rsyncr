@@ -247,13 +247,18 @@ if __name__ == '__main__':
           if verbose: print("Using edit_distance library")
         except:
           try:
-            from editdistance import eval as distance  # https://pypi.python.org/pypi/editdistance/0.2
+            from editdistance_s import distance  # https://github.com/asottile/editdistance-s
             assert distance("abc", "cbe") == 2
-            if verbose: print("Using editdistance library")
+            if verbose: print("Using editdistance_s library")
           except:
-            def distance(a, b): return 0 if a == b else 1  # simple distance measure fallback
-            assert distance("abc", "cbe") == 1
-            if verbose: print("Using simple comparison")
+            try:  # https://github.com/asottile/editdistance-s
+              from editdistance import eval as distance  # https://pypi.python.org/pypi/editdistance/0.2
+              assert distance("abc", "cbe") == 2
+              if verbose: print("Using editdistance library")
+            except:
+              def distance(a, b): return 0 if a == b else 1  # simple distance measure fallback
+              assert distance("abc", "cbe") == 1
+              if verbose: print("Using simple comparison")
 
   # Preprocess source and target folders
   rsyncPath = os.getenv("RSYNC", "rsync")  # allows definition if custom executable
