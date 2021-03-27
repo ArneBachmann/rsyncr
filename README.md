@@ -1,4 +1,5 @@
 # rsyncr #
+
 ![GPLv3 logo](http://www.gnu.org/graphics/gplv3-127x51.png)
 
 Awesome useful `rsync` convenience wrapper for Python 2.
@@ -6,18 +7,21 @@ Does the heavy lifting of finding potential problems, plus detects potential mov
 
 We recommend using `PyPy`, which appears to operate order(s) of magnitude faster during the (inefficient) file tree computations.
 
-
 ## Installation ##
-```
+
+```sh
 pip install rsyncr
 ```
 
 ## Usage ##
-```
+
+```sh
 rsyncr <target-path> [options]
 ```
+
 with options:
-```
+
+```text
 Copy mode options (default: update):
   --add               -a  Copy only additional files (otherwise updating only younger files)
   --sync              -s  Remove files in target if removed in source, including empty folders
