@@ -139,8 +139,8 @@ if __name__ == '__main__':
     Syntax:  rsyncr <target-path> [options]
 
     target-path is either a local folder /path or Drive:\path  or a remote path [rsync://][user@]host:/path
-      using letter:    will use the drive's current folder (Windows only)
-      using letter:\~  will use full source path on target
+      using Drive:    -  use the drive's current folder (Windows only)
+      using Drive:\~  -  use full source path on target drive
 
     Copy mode options (default: update):
       --add                -a  Immediately copy only additional files (otherwise update modified files)
@@ -218,7 +218,7 @@ if __name__ == '__main__':
       drivepath = os.getcwd()  # get current folder on that drive
       os.chdir(olddrive)       # change back
     else: drivepath = sys.argv[1]
-    if drivepath.endswith(f"{os.sep}~") and sys.platform == "win32":
+    if drivepath.rstrip("/\\").endswith(f"{os.sep}~") and sys.platform == "win32":
       drivepath = drivepath[0] + os.getcwd()[1:]  # common = os.path.commonpath(("A%s" % os.getcwd()[1:], "A%s" % drivepath[1:]))
     if not os.path.exists(drivepath): raise Exception(f"Target folder '{drivepath}' doesn't exist. Create it manually to sync. This avoids bad surprises!")
     target = cygwinify(os.path.abspath(drivepath))
