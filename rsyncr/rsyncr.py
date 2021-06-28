@@ -223,42 +223,49 @@ if __name__ == '__main__':
     if not os.path.exists(drivepath): raise Exception(f"Target folder '{drivepath}' doesn't exist. Create it manually to sync. This avoids bad surprises!")
     target = cygwinify(os.path.abspath(drivepath))
 
-  try:
-    from textdistance import distance as _distance  # https://github.com/orsinium/textdistance, now for Python 2 as well
-    def distance(a, b): return _distance('l', a, b)  # h = hamming, l = levenshtein, dl = damerau-levenshtein
-    assert distance("abc", "cbe") == 2  # until bug has been fixed
-    if verbose: print("Using textdistance library")
+  try:  # https://github.com/seatgeek/fuzzywuzzy (+ https://github.com/ztane/python-Levenshtein/)
+    from fuzzywuzzy import fuzz
+    def distance(a, b): return (100 - fuzz.ratio(a, b)) / 20  # similarity score 0..100
+    assert distance("abc", "abe") == 1.65
+    assert distance("abc", "cbe") == 3.35
+    if verbose: print("Using fuzzywuzzy library")
   except:
     try:
-      from stringdist import levenshtein as distance  # https://pypi.python.org/pypi/StringDist/1.0.9
-      assert distance("abc", "cbe") == 2
-      if verbose: print("Using StringDist library")
+      from textdistance import distance as _distance  # https://github.com/orsinium/textdistance, now for Python 2 as well
+      def distance(a, b): return _distance('l', a, b)  # h = hamming, l = levenshtein, dl = damerau-levenshtein
+      assert distance("abc", "cbe") == 2  # until bug has been fixed
+      if verbose: print("Using textdistance library")
     except:
       try:
-        from brew_distance import distance as _distance  # https://github.com/dhgutteridge/brew-distance  slow implementation
-        def distance(a, b): return _distance(a, b)[0]  # [1] contains operations
-        assert distance("abc", "cbe") == 2  # until bug has been fixed
-        if verbose: print("Using brew_distance library")
+        from stringdist import levenshtein as distance  # https://pypi.python.org/pypi/StringDist/1.0.9
+        assert distance("abc", "cbe") == 2
+        if verbose: print("Using StringDist library")
       except:
         try:
-          from edit_distance import SequenceMatcher as _distance # https://github.com/belambert/edit-distance  slow implementation
-          def distance(a, b): return _distance(a, b).distance()
-          assert distance("abc", "cbe") == 2
-          if verbose: print("Using edit_distance library")
+          from brew_distance import distance as _distance  # https://github.com/dhgutteridge/brew-distance  slow implementation
+          def distance(a, b): return _distance(a, b)[0]  # [1] contains operations
+          assert distance("abc", "cbe") == 2  # until bug has been fixed
+          if verbose: print("Using brew_distance library")
         except:
           try:
-            from editdistance_s import distance  # https://github.com/asottile/editdistance-s
+            from edit_distance import SequenceMatcher as _distance # https://github.com/belambert/edit-distance  slow implementation
+            def distance(a, b): return _distance(a, b).distance()
             assert distance("abc", "cbe") == 2
-            if verbose: print("Using editdistance_s library")
+            if verbose: print("Using edit_distance library")
           except:
-            try:  # https://github.com/asottile/editdistance-s
-              from editdistance import eval as distance  # https://pypi.python.org/pypi/editdistance/0.2
+            try:
+              from editdistance_s import distance  # https://github.com/asottile/editdistance-s
               assert distance("abc", "cbe") == 2
-              if verbose: print("Using editdistance library")
+              if verbose: print("Using editdistance_s library")
             except:
-              def distance(a, b): return 0 if a == b else 1  # simple distance measure fallback
-              assert distance("abc", "cbe") == 1
-              if verbose: print("Using simple comparison")
+              try:  # https://github.com/asottile/editdistance-s
+                from editdistance import eval as distance  # https://pypi.python.org/pypi/editdistance/0.2
+                assert distance("abc", "cbe") == 2
+                if verbose: print("Using editdistance library")
+              except:
+                def distance(a, b): return 0 if a == b else 1  # simple distance measure fallback
+                assert distance("abc", "cbe") == 1
+                if verbose: print("Using simple comparison")
 
   # Preprocess source and target folders
   rsyncPath = os.getenv("RSYNC", "rsync")  # allows definition if custom executable

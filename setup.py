@@ -18,7 +18,7 @@ setup(
   version = versionString,  # without extra
   description = "rsyncr - An enhanced rsync backup wrapper script",
   long_description = "",  # TODO
-  install_requires = ["textdistance >= 3"],  # actually an optional dependency
+  install_requires = ["textdistance >= 3", "fuzzywuzzy[speedup"],  # actually an optional dependency
   classifiers = [c.strip() for c in """
         Development Status :: 5 - Production/Stable
         Intended Audience :: Science/Research
@@ -26,12 +26,12 @@ setup(
         License :: OSI Approved :: GNU General Public License v3 (GPLv3)
         Operating System :: OS Independent
         Programming Language :: Python
-        Programming Language :: Python :: 2
-        Programming Language :: Python :: 2.7
         Programming Language :: Python :: 3
         Programming Language :: Python :: 3.5
         Programming Language :: Python :: 3.6
         Programming Language :: Python :: 3.7
+        Programming Language :: Python :: 3.8
+        Programming Language :: Python :: 3.9
         """.split('\n') if c.strip()],  # https://pypi.python.org/pypi?%3Aaction=list_classifiers
   keywords = 'rsync wrapper backup safety feedback UI interface',
   author = 'Arne Bachmann',
