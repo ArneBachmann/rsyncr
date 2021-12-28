@@ -1,6 +1,9 @@
+# (C) 2017-2021 Arne Bachmann. All rights reserved
+
 # rsync wrapper script that supports humans in detecting dangerous changes to a folder structure synchronization.
 # The script highlights the main changes and detects potential unwanted file deletions, while hinting to moved files that might correspond to a folder rename or move.
 
+# TODO tests failing
 # TODO copying .git folders (or any dot-folders?) changes the owner and access rights! This leads to problems on consecutive syncs
 
 
@@ -37,34 +40,37 @@
 
 
 # Standard modules
+from __future__ import annotations
 import collections, functools, os, subprocess, sys, time
-assert sys.version_info >= (3, 6)  # ensures maximum roundtrip chances
+from typing import cast, Any, Callable, Dict, Iterable, List, Optional, Tuple
+from typing_extensions import Final
+assert sys.version_info >= (3, 6)  # 3.6 ensures maximum roundtrip chances
 time_start = time.time()
 
 
 # Constants
-MAX_MOVE_DIRS     = 2  # don't display more than this number of potential directory moves
+MAX_MOVE_DIRS:int = 2  # don't display more than this number of potential directory moves
 MAX_EDIT_DISTANCE = 5  # insertions/deletions/replacements (and also moves for damerau-levenshtein)
-MB                = 1024 << 10
-QUOTE = '"' if sys.platform == "win32" else ""
-FEXCLUDE = ['*~~'] + ([".corruptdetect"] if '--with-checksums' not in sys.argv else [])  # ~~to avoid further copying of previous backups
-DEXCLUDE = ['.redundir', '.imagesubsort_cache', '.imagesubsort_trash', '$RECYCLE.BIN', 'System Volume Information', 'Recovery', 'catalog Previews.lrdata']
+MB:int            = 1024 << 10
+QUOTE:str = '"' if sys.platform == "win32" else ""
+FEXCLUDE:List[str] = ['*~~'] + ([".corruptdetect"] if '--with-checksums' not in sys.argv else [])  # ~~to avoid further copying of previous backups
+DEXCLUDE:List[str] = ['.redundir', '.imagesubsort_cache', '.imagesubsort_trash', '$RECYCLE.BIN', 'System Volume Information', 'Recovery', 'catalog Previews.lrdata']
 
 # Rsync output classification helpers
-State =  {".": "unchanged", ">": "store", "c": "changed", "<": "restored", "*": "message"}  # rsync output marker detection
-Entry =  {"f": "file", "d": "dir", "u": "unknown"}
-Change = {".": False, "+": True, "s": True, "t": True}  # size/time have [.+st] in their position
+State:Final[Dict[str,str]] =  {".": "unchanged", ">": "store", "c": "changed", "<": "restored", "*": "message"}  # rsync output marker detection
+Entry:Final[Dict[str,str]] =  {"f": "file", "d": "dir", "u": "unknown"}
+Change:Final[Dict[str,bool]] = {".": False, "+": True, "s": True, "t": True}  # size/time have [.+st] in their position
 FileState = collections.namedtuple("FileState", ["state", "type", "change", "path", "newdir"])  # 9 characters and one space before relative path
 
 
-# Utility functions
-def xany(pred, lizt): return functools.reduce(lambda a, b: a or  pred(b), lizt if hasattr(lizt, '__iter__') else list(lizt), False)
-def xall(pred, lizt): return functools.reduce(lambda a, b: a and pred(b), lizt if hasattr(lizt, '__iter__') else list(lizt), True)
+# Utility functions TODO benchmark this
+def xany(pred:Callable[[Any], bool], lizt:Iterable[Any]) -> bool: return functools.reduce(lambda a, b: a or  pred(b), lizt if hasattr(lizt, '__iter__') else list(lizt), False)
+def xall(pred:Callable[[Any], bool], lizt:Iterable[Any]) -> bool: return functools.reduce(lambda a, b: a and pred(b), lizt if hasattr(lizt, '__iter__') else list(lizt), True)
 
 
 # Conditional function definition for cygwin under Windows
 if sys.platform == 'win32':  # this assumes that the rsync for windows build is using cygwin internals
-  def cygwinify(path):
+  def cygwinify(path:str) -> str:
     p = path.replace("\\", "/")
     while "//" in p: p = p.replace("//", "/")
     while "::" in p: p = p.replace("::", ":")
@@ -73,10 +79,10 @@ if sys.platform == 'win32':  # this assumes that the rsync for windows build is 
       p = "/cygdrive/" + x[0].lower() + x[1]
     return p[:-1] if p[-1] == "/" else p
 else:
-  def cygwinify(path): return path[:-1] if path[-1] == "/" else path
+  def cygwinify(path:str) -> str: return path[:-1] if path[-1] == "/" else path
 
 
-def parseLine(line):
+def parseLine(line:str) -> FileState:
   ''' Parse one rsync item.
   >>> print(parseLine("*deleting   05 - Bulgarien/IMG_0648.JPG"))
   FileState(state='deleted', type='unknown', change=True, path='/07/05 - Bulgarien/IMG_0648.JPG', newdir=False)
@@ -102,32 +108,32 @@ def parseLine(line):
   return FileState(state, entry, change, path[len(cwdParent):], newdir)
 
 
-def constructCommand(simulate, stats = False):  # TODO -m prune empty dir chains from file list
+def constructCommand(simulate:bool, stats:bool = False) -> str:  # TODO -m prune empty dir chains from file list
   ''' Warning: Consults global variables. '''
   if stats:  # TODO not accurate as missing ignores etc
     return f'{QUOTE}{rsyncPath}{QUOTE}' + \
-           " -n --stats {rec}%s '{source}' '{target}'".format(
-        rec = "-r " if not flat and not file else "",
-        addmode = "--ignore-existing " if add else ("-I " if override else "-u "),  # -I ignore-times (size only)
-        source = source,
-        target = target
+       " -n --stats {rec}{addmode} '{source}' '{target}'".format(
+        rec    ="-r " if not flat and not file else "",
+        addmode="--ignore-existing " if add else ("-I " if override else "-u "),  # -I ignore-times (size only)
+        source =source,
+        target =target
       )
 
   return f'{QUOTE}{rsyncPath}{QUOTE}' + \
          " {sim}{rec}{addmode}{delmode}{comp}{part}{bacmode}{units}{check} -i -t --no-i-r {exclude} '{source}' '{target}'".format(  # -t keep times, -i itemize
-        sim     = "-n " if simulate else ("--info=progress2 -h " if protocol >= 31 or rversion >= (3, 1) else ""),
-        rec     = "-r " if not flat and not file else "",  # TODO allow flat with --delete
-        addmode = "--ignore-existing " if add else ("-I " if override else "-u "),  # --ignore-existing only copy additional files (vs. --existing: don't add new files) -u only copy if younger -I ignore times
-        delmode = "--delete-after --prune-empty-dirs --delete-excluded " if sync else "",
-        comp    = "-S -z --compress-level=9 " if compress else "",
-        part    = "-P " if file else "",  # -P = --partial --progress
-        bacmode = ("-b --suffix='~~' " if backup else ""),
-        units   = ("" if simulate else "-hh --stats "),  # using SI-units
-        check   = "-c" if checksum else "",
-        exclude = " ".join(f"--exclude='{fe}' --filter='P {fe}' "   for fe in FEXCLUDE) +
-                  " ".join(f"--exclude='{de}/' --filter='P {de}/' " for de in DEXCLUDE),  # P = exclude from deletion, meaning not copied, but also not removed it exists only in target.
-        source = source,
-        target = target
+        sim    ="-n " if simulate else ("--info=progress2 -h " if protocol >= 31 or rversion >= (3, 1) else ""),
+        rec    ="-r " if not flat and not file else "",  # TODO allow flat with --delete
+        addmode="--ignore-existing " if add else ("-I " if override else "-u "),  # --ignore-existing only copy additional files (vs. --existing: don't add new files) -u only copy if younger -I ignore times
+        delmode="--delete-after --prune-empty-dirs --delete-excluded " if sync else "",
+        comp   ="-S -z --compress-level=9 " if compress else "",
+        part   ="-P " if file else "",  # -P = --partial --progress
+        bacmode=("-b --suffix='~~' " if backup else ""),
+        units  =("" if simulate else "-hh --stats "),  # using SI-units
+        check  ="-c" if checksum else "",
+        exclude=" ".join(f"--exclude='{fe}' --filter='P {fe}' "   for fe in FEXCLUDE) +
+                " ".join(f"--exclude='{de}/' --filter='P {de}/' " for de in DEXCLUDE),  # P = exclude from deletion, meaning not copied, but also not removed it exists only in target.
+        source =source,
+        target =target
     )
 
 
@@ -192,11 +198,11 @@ if __name__ == '__main__':
     print(f"Running in single file transfer mode for '{file}'")
     while len(file) > 0 and file[0] == '/': file = file[1:]
     while len(file) > 0 and file[-1] == '/': file = file[:-1]
-
+  
   # Target handling. Accepted target paths: D: (cwd on D:), or /local_path, or D:\local_path, or rsync://path, or rsync://user@path, arnee@rsync.hidrive.strato.com:/users/arnee/path/
-  user = sys.argv[sys.argv.index('--user') + 1] if '--user' in sys.argv else None
+  user:Optional[str] = sys.argv[sys.argv.index('--user') + 1] if '--user' in sys.argv else None
   if user: del sys.argv[sys.argv.index('--user'):sys.argv.index('--user') + 2]
-  remote = None
+  remote:Optional[str|bool] = None
   if sys.argv[1].startswith('rsync://'): sys.argv[1] = sys.argv[1].replace('rsync://', ''); remote = True
   if '@' in sys.argv[1]:  # must be a remote URL with user name specified
     user = sys.argv[1].split("@")[0]
@@ -209,7 +215,7 @@ if __name__ == '__main__':
     if ':' not in sys.argv[1]: raise Exception("Expecting server:path rsync path")
     host = sys.argv[1].split(':')[0]  # host name
     path = sys.argv[1].split(':')[1]  # remote target path
-    remote = user + "@" + host
+    remote = cast(str, user) + "@" + host
     target = remote + ":" + path  # TODO this simply reconstructs what ws deconstructed above, right?
   else:  # local mode
     if sys.argv[1].strip().endswith(":"):  # just a drive letter - meaning currently selected folder of that drive! otherwise use drive + backslash (D:\)
@@ -220,46 +226,45 @@ if __name__ == '__main__':
     else: drivepath = sys.argv[1]
     if drivepath.rstrip("/\\").endswith(f"{os.sep}~") and sys.platform == "win32":
       drivepath = drivepath[0] + os.getcwd()[1:]  # common = os.path.commonpath(("A%s" % os.getcwd()[1:], "A%s" % drivepath[1:]))
-    if not os.path.exists(drivepath): raise Exception(f"Target folder '{drivepath}' doesn't exist. Create it manually to sync. This avoids bad surprises!")
+    if drivepath != '--test' and not os.path.exists(drivepath): raise Exception(f"Target folder '{drivepath}' doesn't exist. Create it manually to sync. This avoids bad surprises!")
     target = cygwinify(os.path.abspath(drivepath))
 
-  try:  # https://github.com/seatgeek/fuzzywuzzy (+ https://github.com/ztane/python-Levenshtein/)
-    from fuzzywuzzy import fuzz
+  try:  # https://github.com/seatgeek/fuzzywuzzy (+ https://github.com/ztane/python-Levenshtein/) TODO avoid this try chain if --no-move
+    from fuzzywuzzy import fuzz  # type: ignore
     def distance(a, b): return (100 - fuzz.ratio(a, b)) / 20  # similarity score 0..100
-    assert distance("abc", "abe") == 1.65
-    assert distance("abc", "cbe") == 3.35
+    assert distance("abc", "abe") == 1.65; assert distance("abc", "cbe") == 3.35
     if verbose: print("Using fuzzywuzzy library")
   except:
     try:
-      from textdistance import distance as _distance  # https://github.com/orsinium/textdistance, now for Python 2 as well
-      def distance(a, b): return _distance('l', a, b)  # h = hamming, l = levenshtein, dl = damerau-levenshtein
+      from textdistance import distance as _distance  # type: ignore  # https://github.com/orsinium/textdistance, now for Python 2 as well
+      def distance(a, b): return _distance('l', a, b)  # type: ignore  # h = hamming, l = levenshtein, dl = damerau-levenshtein
       assert distance("abc", "cbe") == 2  # until bug has been fixed
       if verbose: print("Using textdistance library")
     except:
       try:
-        from stringdist import levenshtein as distance  # https://pypi.python.org/pypi/StringDist/1.0.9
+        from stringdist import levenshtein as distance  # type: ignore  # https://pypi.python.org/pypi/StringDist/1.0.9
         assert distance("abc", "cbe") == 2
         if verbose: print("Using StringDist library")
       except:
         try:
-          from brew_distance import distance as _distance  # https://github.com/dhgutteridge/brew-distance  slow implementation
-          def distance(a, b): return _distance(a, b)[0]  # [1] contains operations
+          from brew_distance import distance as _distance  # type: ignore  # https://github.com/dhgutteridge/brew-distance  slow implementation
+          def distance(a, b): return _distance(a, b)[0]  # [1] contains operations  # type: ignore
           assert distance("abc", "cbe") == 2  # until bug has been fixed
           if verbose: print("Using brew_distance library")
         except:
           try:
-            from edit_distance import SequenceMatcher as _distance # https://github.com/belambert/edit-distance  slow implementation
+            from edit_distance import SequenceMatcher as _distance  # type: ignore  # https://github.com/belambert/edit-distance  slow implementation
             def distance(a, b): return _distance(a, b).distance()
             assert distance("abc", "cbe") == 2
             if verbose: print("Using edit_distance library")
           except:
             try:
-              from editdistance_s import distance  # https://github.com/asottile/editdistance-s
+              from editdistance_s import distance  # type: ignore  # https://github.com/asottile/editdistance-s
               assert distance("abc", "cbe") == 2
               if verbose: print("Using editdistance_s library")
             except:
               try:  # https://github.com/asottile/editdistance-s
-                from editdistance import eval as distance  # https://pypi.python.org/pypi/editdistance/0.2
+                from editdistance import eval as distance  # type: ignore  # https://pypi.python.org/pypi/editdistance/0.2
                 assert distance("abc", "cbe") == 2
                 if verbose: print("Using editdistance library")
               except:
@@ -268,8 +273,8 @@ if __name__ == '__main__':
                 if verbose: print("Using simple comparison")
 
   # Preprocess source and target folders
-  rsyncPath = os.getenv("RSYNC", "rsync")  # allows definition if custom executable
-  cwdParent = cygwinify(os.path.dirname(os.getcwd()))  # because current directory's name may not exist in target, we need to track its contents as its own folder
+  rsyncPath:str = os.getenv("RSYNC", "rsync")  # allows definition of custom executable
+  cwdParent:str = cygwinify(os.path.dirname(os.getcwd()))  # because current directory's name may not exist in target, we need to track its contents as its own folder
   if '--test' in sys.argv: import doctest; doctest.testmod(); sys.exit(0)
   if target[-1] != "/": target += "/"
   source = cygwinify(os.getcwd()); source += "/"
@@ -287,16 +292,16 @@ if __name__ == '__main__':
 
 
   # Determine total file size
-  rversion = subprocess.Popen(f"{QUOTE}{rsyncPath}{QUOTE} --version", shell = True, stdout = subprocess.PIPE, stderr = sys.stderr).communicate()[0].decode(sys.stdout.encoding).replace("\r\n", "\n").split("\n")[0]
-  protocol = int(rversion.split("protocol version ")[1])
-  assert rversion.startswith("rsync"), "Cannot determine rsync version: " + rversion  # e.g. rsync  version 3.0.4  protocol version 30)
-  rversion = tuple([int(_) for _ in rversion.split("version ")[1].split(" ")[0].split(".")[:2]])
+  output = subprocess.Popen(f"{QUOTE}{rsyncPath}{QUOTE} --version", shell=True, stdout=subprocess.PIPE, stderr=sys.stderr).communicate()[0].decode(sys.stdout.encoding).replace("\r\n", "\n").split("\n")[0]
+  protocol:int = int(output.split("protocol version ")[1])
+  assert output.startswith("rsync"), f"Cannot determine rsync version: {output}"  # e.g. rsync  version 3.0.4  protocol version 30)
+  rversion:Tuple[int,int] = cast(Tuple[int,int], tuple([int(_) for _ in output.split("version ")[1].split(" ")[0].split(".")[:2]]))
   print(f"Detected rsync version {rversion[0]}.{rversion[1]}.x  protocol {protocol}")
 
   if estimate:
-    command = constructCommand(simulate = True, stats = True)
+    command = constructCommand(simulate=True, stats=True)
     if verbose: print(f"\nAnalyzing: {command}")
-    lines = subprocess.Popen(command, shell = True, stdout = subprocess.PIPE, stderr = sys.stderr).communicate()[0].decode(sys.stdout.encoding).replace("\r\n", "\n").split("\n")
+    lines:List[str] = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=sys.stderr).communicate()[0].decode(sys.stdout.encoding).replace("\r\n", "\n").split("\n")
     line = [l for l in lines if l.startswith("Number of files:")][0]
     totalfiles = int(line.split("Number of files: ")[1].split(" (")[0].replace(",", ""))
     line = [l for l in lines if l.startswith("Total file size:")][0]
@@ -310,39 +315,38 @@ if __name__ == '__main__':
 
   # Simulation rsync run
   if not file and (simulate or not add):  # only simulate in multi-file mode. in add-only mode we need not check for conflicts
-    command = constructCommand(simulate = True)
+    command = constructCommand(simulate=True)
     if verbose: print(f"\nSimulating: {command}")
-    so = subprocess.Popen(command, shell = True, stdout = subprocess.PIPE, stderr = sys.stderr).communicate()[0]
-    lines = so.replace(b"\r\n", b"\n").split(b"\n")
-    for _line in range(len(lines)):  # decode each line independently in case there are different encodings
-      try:
-        lines[_line] = lines[_line].decode(sys.stdout.encoding)
-      except Exception:
-        try: lines[_line] = lines[_line].decode("utf-8" if sys.stdout.encoding != "utf-8" else "cp1252")
-        except Exception: print(f"Error: could not decode STDOUT output using encoding '{sys.stdout.encoding}' or cp1252"); import pdb; pdb.set_trace()
-    entries = [parseLine(line) for line in lines if line != ""]  # parse itemized information
+    lines = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=sys.stderr).communicate()[0].decode(sys.stdout.encoding).replace("\r\n", "\n").split("\n")
+#    for _line in range(len(lines)):  # decode each line independently in case there are different encodings
+#      try:
+#        lines[_line] = lines[_line].decode(sys.stdout.encoding)
+#      except Exception:
+#        try: lines[_line] = lines[_line].decode("utf-8" if sys.stdout.encoding != "utf-8" else "cp1252")
+#        except Exception: print(f"Error: could not decode STDOUT output using encoding '{sys.stdout.encoding}' or cp1252"); import pdb; pdb.set_trace()
+    entries:List[FileState] = [parseLine(line) for line in lines if line != ""]  # parse itemized information
     entries = [entry for entry in entries if entry.path != ""]  # throw out all parent folders (TODO might require makedirs())
 
     # Detect files belonging to newly create directories - can be ignored regarding removal or moving
-    newdirs = {entry.path: [e.path for e in entries if e.path.startswith(entry.path) and e.type == "file"] for entry in entries if entry.newdir}  # associate dirs with contained files
+    newdirs:Dict[str,List[str]] = {entry.path: [e.path for e in entries if e.path.startswith(entry.path) and e.type == "file"] for entry in entries if entry.newdir}  # associate dirs with contained files
     entries = [entry for entry in entries if entry.path not in newdirs and not xany(lambda files: entry.path in files, newdirs.values())]
     # TODO why exclude files in newdirs from being recognized as moved? must be complementary to the movedirs logic
 
     # Main logic: Detect files and relationships
-    def new(entry): return [e.path for e in addNames if e != entry and os.path.basename(entry.path) == os.path.basename(e.path)]  # all entries not being the first one (which they shouldn't be anyway)
-    addNames = [f for f in entries if f.state == "store"]
-    potentialMoves = {old.path: new(old) for old in entries if old.type == "unknown" and old.state == "deleted"}  # what about modified?
-    removes = [rem for rem, froms in potentialMoves.items() if froms == []]  # exclude entries that have no origin
+    #@functools.lru_cache(maxsize=99999)
+    def new(entry:FileState) -> List[str]: return [e.path for e in addNames if e != entry and os.path.basename(entry.path) == os.path.basename(e.path)]  # all entries not being the first one (which they shouldn't be anyway)
+    addNames:List[FileState] = [f for f in entries if f.state == "store"]
+    potentialMoves:Dict[str,List[str]] = {old.path: new(old) for old in entries if old.type == "unknown" and old.state == "deleted"}  # what about modified?
+    removes:List[str] = [rem for rem, froms in potentialMoves.items() if froms == []]  # exclude entries that have no origin
     potentialMoves = {k: v for k, v in potentialMoves.items() if k not in removes}
-    modified = [entry.path for entry in entries if entry.type == "file" and entry.change and entry.path not in removes and entry.path not in potentialMoves]
-    added = [entry.path for entry in entries if entry.type == "file" and entry.state in ("store", "changed") and entry.path and not xany(lambda a: entry.path in a, potentialMoves.values())]  # latter is a weak check
+    modified:List[str] = [entry.path for entry in entries if entry.type == "file" and entry.change and entry.path not in removes and entry.path not in potentialMoves]
+    added:List[str] = [entry.path for entry in entries if entry.type == "file" and entry.state in ("store", "changed") and entry.path and not xany(lambda a: entry.path in a, potentialMoves.values())]  # latter is a weak check
     modified = [name for name in modified if name not in added]
-    potentialMoveDirs = {}
+    potentialMoveDirs:Dict[str,str] = {}
     if not add and '--skip-move' not in sys.argv and '--skip-moves' not in sys.argv:
       if verbose: print("Computing potential directory moves")  # HINT: a check if all removed files can be found in a new directory cannot be done, as we only that that a directory has been deleted, but nothing about its files
       potentialMoveDirs = {delname: ", ".join([f"{_[1]}:{_[0]}" for _ in sorted([(distance(os.path.basename(addname), os.path.basename(delname)), addname) for addname in newdirs.keys()]) if _[0] < MAX_EDIT_DISTANCE][:MAX_MOVE_DIRS]) for delname in list(potentialMoves.keys()) + removes}
       potentialMoveDirs = {k: v for k, v in potentialMoveDirs.items() if v != ""}
-
 
     # User interaction
     if len(added)             > 0: print("%-5s added files"   % len(added))
@@ -358,9 +362,9 @@ if __name__ == '__main__':
       sys.exit(0)
     while ask:
       selection = input(f"""Options:
-  show (a)dded ({len(added)}), (c)hanged ({len(modified)}), (r)emoved ({len(removes)}), (m)oved files ({len(potentialMoves)}), (A)dded ({len(newdirs)}:%d) or (M)oved ({len(potentialMoveDirs)}) folders:files
+  show (a)dded ({len(added)}), (c)hanged ({len(modified)}), (r)emoved ({len(removes)}), (m)oved files ({len(potentialMoves)}), (A)dded ({len(newdirs)}:{sum(len(_) for _ in newdirs.values())}) or (M)oved ({len(potentialMoveDirs)}) folders:files
   (y) - continue
-  Enter: exit.\n  => """ % sum(len(_) for _ in newdirs.values())).strip()
+  Enter: exit.\n  => """).strip()
 
       if   selection == "a": print("\n".join("  "   + add for add in added))
       elif selection == "t": print("\n".join("  "   + add for add in sorted(added, key = lambda a: (a[a.rindex("."):] if "." in a else a) + a)))  # by file type
@@ -381,9 +385,9 @@ if __name__ == '__main__':
     if verbose: print("Finished after %.1f minutes." % ((time.time() - time_start) / 60.))
     sys.exit(0)
 
-  command = constructCommand(simulate = False)
-  if verbose: print("\nExecuting: " + command)
-  subprocess.Popen(command, shell = True, stdout = sys.stdout, stderr = sys.stderr).wait()
+  command = constructCommand(simulate=False)
+  if verbose: print(f"\nExecuting: {command}")
+  subprocess.Popen(command, shell=True, stdout=sys.stdout, stderr=sys.stderr).wait()
 
   # Quit
   if verbose: print("Finished after %.1f minutes." % ((time.time() - time_start) / 60.))

@@ -32,6 +32,7 @@ setup(
         Programming Language :: Python :: 3.7
         Programming Language :: Python :: 3.8
         Programming Language :: Python :: 3.9
+        Programming Language :: Python :: 3.10
         """.split('\n') if c.strip()],  # https://pypi.python.org/pypi?%3Aaction=list_classifiers
   keywords = 'rsync wrapper backup safety feedback UI interface',
   author = 'Arne Bachmann',
