@@ -42,7 +42,7 @@
 # Standard modules
 from __future__ import annotations
 import collections, functools, os, subprocess, sys, time
-from typing import cast, Any, Callable, Dict, Iterable, List, Optional, Tuple
+from typing import cast, Any, Callable, Dict, Iterable, List, Optional, Set, Tuple
 from typing_extensions import Final
 assert sys.version_info >= (3, 6)  # 3.6 ensures maximum roundtrip chances
 time_start = time.time()
@@ -60,7 +60,7 @@ DEXCLUDE:List[str] = ['.redundir', '.imagesubsort_cache', '.imagesubsort_trash',
 State:Final[Dict[str,str]] =  {".": "unchanged", ">": "store", "c": "changed", "<": "restored", "*": "message"}  # rsync output marker detection
 Entry:Final[Dict[str,str]] =  {"f": "file", "d": "dir", "u": "unknown"}
 Change:Final[Dict[str,bool]] = {".": False, "+": True, "s": True, "t": True}  # size/time have [.+st] in their position
-FileState = collections.namedtuple("FileState", ["state", "type", "change", "path", "newdir"])  # 9 characters and one space before relative path
+FileState = collections.namedtuple("FileState", ["state", "type", "change", "path", "newdir", "base"])  # 9 characters and one space before relative path
 
 
 # Utility functions TODO benchmark this
@@ -89,23 +89,24 @@ def parseLine(line:str) -> FileState:
   >>> print(parseLine(">f+++++++++ 05 - Bulgarien/07/IMG_0682.JPG"))
   FileState(state='store', type='file', change=False, path='/07/05 - Bulgarien/07/IMG_0682.JPG', newdir=False)
   '''
-  atts = line.split(" ")[0]  # until space between itemization info and path
-  path = line[line.index(" ") + 1:]  # TODO combine commands
+  atts:str = line.split(" ")[0]  # until space between itemization info and path
+  path:str = line[line.index(" ") + 1:]  # TODO combine commands
 
-  state = State.get(atts[0])  # *deleting
+  state:str = cast(str, State.get(atts[0]))  # *deleting
   if state != "message":
     entry = Entry.get(atts[1])  # f:file, d:dir
-    change = xany(lambda _: _ in "cstpoguax", atts[2:])  # check attributes for any change
+    change:bool = xany(lambda _: _ in "cstpoguax", atts[2:])  # check attributes for any change
   else:
     entry = Entry["u"]  # unknown type
     change = True
   while path.startswith(" "): path = path[1:]
   path = cygwinify(os.path.abspath(path))
-  newdir = atts[:2] == "cd" and xall(lambda _: _ == "+", atts[2:])
+  newdir:bool = atts[:2] == "cd" and xall(lambda _: _ == "+", atts[2:])
   if state == "message" and atts[1:] == "deleting": state = "deleted"
   try: assert path.startswith(cwdParent + "/") or path == cwdParent
   except: raise Exception(f"Wrong path prefix: {path} vs {cwdParent}")
-  return FileState(state, entry, change, path[len(cwdParent):], newdir)
+  path = path[len(cwdParent):]
+  return FileState(state, entry, change, path, newdir, os.path.basename(path))
 
 
 def constructCommand(simulate:bool, stats:bool = False) -> str:  # TODO -m prune empty dir chains from file list
@@ -299,53 +300,47 @@ if __name__ == '__main__':
   print(f"Detected rsync version {rversion[0]}.{rversion[1]}.x  protocol {protocol}")
 
   if estimate:
-    command = constructCommand(simulate=True, stats=True)
+    command:str = constructCommand(simulate=True, stats=True)
     if verbose: print(f"\nAnalyzing: {command}")
     lines:List[str] = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=sys.stderr).communicate()[0].decode(sys.stdout.encoding).replace("\r\n", "\n").split("\n")
-    line = [l for l in lines if l.startswith("Number of files:")][0]
-    totalfiles = int(line.split("Number of files: ")[1].split(" (")[0].replace(",", ""))
+    line:str = [l for l in lines if l.startswith("Number of files:")][0]
+    totalfiles:int = int(line.split("Number of files: ")[1].split(" (")[0].replace(",", ""))
     line = [l for l in lines if l.startswith("Total file size:")][0]
-    totalbytes = int(line.split("Total file size: ")[1].split(" bytes")[0].replace(",", ""))
-    print(f"\nEstimated run time for {totalfiles} entries: %.1f (SSD) %.1f (HDD) %.1f (Ethernet) %.1f (USB3.0)" % (
+    totalbytes:int = int(line.split("Total file size: ")[1].split(" bytes")[0].replace(",", ""))
+    print(f"\nEstimated run time for {totalfiles} entries: %.1f (SSD) %.1f (HDD) %.1f (Ethernet) %.1f (USB 3.0)" % (
       totalbytes / (60 *  130 * MB),   # SSD
-      totalbytes / (60 *   60 * MB),    # HDD
-      totalbytes / (60 * 12.5 * MB),  # 100Mbit/s
-      totalbytes / (60 *  0.4 * MB)))  # USB 3.0
+      totalbytes / (60 *   60 * MB),   # HDD
+      totalbytes / (60 * 12.5 * MB),   # 100 Mbit/s
+      totalbytes / (60 *  0.4 * MB)))  # USB 3.0 TODO really?
     if not ask: input("Hit Enter to continue.")
 
   # Simulation rsync run
   if not file and (simulate or not add):  # only simulate in multi-file mode. in add-only mode we need not check for conflicts
     command = constructCommand(simulate=True)
     if verbose: print(f"\nSimulating: {command}")
-    lines = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=sys.stderr).communicate()[0].decode(sys.stdout.encoding).replace("\r\n", "\n").split("\n")
-#    for _line in range(len(lines)):  # decode each line independently in case there are different encodings
-#      try:
-#        lines[_line] = lines[_line].decode(sys.stdout.encoding)
-#      except Exception:
-#        try: lines[_line] = lines[_line].decode("utf-8" if sys.stdout.encoding != "utf-8" else "cp1252")
-#        except Exception: print(f"Error: could not decode STDOUT output using encoding '{sys.stdout.encoding}' or cp1252"); import pdb; pdb.set_trace()
+    lines = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=sys.stderr).communicate()[0].decode(sys.stdout.encoding).replace("\r\n", "\n").split("\n")  # TODO allow different encodings per line? code was removed
     entries:List[FileState] = [parseLine(line) for line in lines if line != ""]  # parse itemized information
-    entries = [entry for entry in entries if entry.path != ""]  # throw out all parent folders (TODO might require makedirs())
+    entries[:] = [entry for entry in entries if entry.path != ""]  # throw out all parent folders (TODO might require makedirs())
 
     # Detect files belonging to newly create directories - can be ignored regarding removal or moving
     newdirs:Dict[str,List[str]] = {entry.path: [e.path for e in entries if e.path.startswith(entry.path) and e.type == "file"] for entry in entries if entry.newdir}  # associate dirs with contained files
-    entries = [entry for entry in entries if entry.path not in newdirs and not xany(lambda files: entry.path in files, newdirs.values())]
+    entries[:] = [entry for entry in entries if entry.path not in newdirs and not xany(lambda files: entry.path in files, newdirs.values())]
     # TODO why exclude files in newdirs from being recognized as moved? must be complementary to the movedirs logic
 
     # Main logic: Detect files and relationships
     #@functools.lru_cache(maxsize=99999)
-    def new(entry:FileState) -> List[str]: return [e.path for e in addNames if e != entry and os.path.basename(entry.path) == os.path.basename(e.path)]  # all entries not being the first one (which they shouldn't be anyway)
+    def new(entry:FileState) -> List[str]: return [e.path for e in addNames if e is not entry and entry.base == e.base]  # all entries not being the first one (which they shouldn't be anyway)
     addNames:List[FileState] = [f for f in entries if f.state == "store"]
     potentialMoves:Dict[str,List[str]] = {old.path: new(old) for old in entries if old.type == "unknown" and old.state == "deleted"}  # what about modified?
-    removes:List[str] = [rem for rem, froms in potentialMoves.items() if froms == []]  # exclude entries that have no origin
+    removes:Set[str] = {rem for rem, froms in potentialMoves.items() if not froms}  # exclude entries that have no origin
     potentialMoves = {k: v for k, v in potentialMoves.items() if k not in removes}
     modified:List[str] = [entry.path for entry in entries if entry.type == "file" and entry.change and entry.path not in removes and entry.path not in potentialMoves]
-    added:List[str] = [entry.path for entry in entries if entry.type == "file" and entry.state in ("store", "changed") and entry.path and not xany(lambda a: entry.path in a, potentialMoves.values())]  # latter is a weak check
-    modified = [name for name in modified if name not in added]
+    added:Set[str] = {entry.path for entry in entries if entry.type == "file" and entry.state in ("store", "changed") and entry.path and not xany(lambda a: entry.path in a, potentialMoves.values())}  # latter is a weak check
+    modified[:] = [name for name in modified if name not in added]
     potentialMoveDirs:Dict[str,str] = {}
     if not add and '--skip-move' not in sys.argv and '--skip-moves' not in sys.argv:
       if verbose: print("Computing potential directory moves")  # HINT: a check if all removed files can be found in a new directory cannot be done, as we only that that a directory has been deleted, but nothing about its files
-      potentialMoveDirs = {delname: ", ".join([f"{_[1]}:{_[0]}" for _ in sorted([(distance(os.path.basename(addname), os.path.basename(delname)), addname) for addname in newdirs.keys()]) if _[0] < MAX_EDIT_DISTANCE][:MAX_MOVE_DIRS]) for delname in list(potentialMoves.keys()) + removes}
+      potentialMoveDirs = {delname: ", ".join([f"{_[1]}:{_[0]}" for _ in sorted([(distance(os.path.basename(addname), os.path.basename(delname)), addname) for addname in newdirs.keys()]) if _[0] < MAX_EDIT_DISTANCE][:MAX_MOVE_DIRS]) for delname in potentialMoves.keys() | removes}
       potentialMoveDirs = {k: v for k, v in potentialMoveDirs.items() if v != ""}
 
     # User interaction
@@ -357,15 +352,14 @@ if __name__ == '__main__':
     if len(potentialMoveDirs) > 0: print("%-5s Moved dirs (maybe) " % len(potentialMoveDirs))
     if not (added or newdirs or modified or removes):
       print("Nothing to do.")
-      if not simulate and ask: input("Enter: exit")
       if verbose: print("Finished after %.1f minutes." % ((time.time() - time_start) / 60.))
+      if not simulate and ask: input("Hit Enter to exit.")
       sys.exit(0)
     while ask:
       selection = input(f"""Options:
   show (a)dded ({len(added)}), (c)hanged ({len(modified)}), (r)emoved ({len(removes)}), (m)oved files ({len(potentialMoves)}), (A)dded ({len(newdirs)}:{sum(len(_) for _ in newdirs.values())}) or (M)oved ({len(potentialMoveDirs)}) folders:files
   (y) - continue
   Enter: exit.\n  => """).strip()
-
       if   selection == "a": print("\n".join("  "   + add for add in added))
       elif selection == "t": print("\n".join("  "   + add for add in sorted(added, key = lambda a: (a[a.rindex("."):] if "." in a else a) + a)))  # by file type
       elif selection == "c": print("\n".join("  > " + mod for mod in sorted(modified)))
