@@ -36,3 +36,36 @@ Generic options:
   --verbose           -v  Show more output
   --help              -h  Show this information
 ```
+
+
+## rsync details
+rsync status output explanation:
+  Source: https://stackoverflow.com/questions/4493525/rsync-what-means-the-f-on-rsync-logs
+  1: > received,  . unchanged or modified (cf. below), c local change, * message, e.g. deleted, h hardlink, * = message following (no path)
+  2: f file, d directory, L symlink, D device, S special
+  3: c checksum of orther change
+  4: s size change
+  5: t time change
+  6: p permission
+  7: o owner
+  8: g group
+  9: u future
+  10: a ACL (not available on all systems)
+  11: x extended attributes (as above)
+
+### rsync options
+ https://linux.die.net/man/1/rsync
+  -r  --recursive  recursive
+  -R  --relative   preserves full path
+  -u  --update     skip files newer in target (to avoid unnecessary write operations)
+  -i  --itemize-changes  Show results (itemize - necessary to allow parsing)
+  -t  --times            keep timestamps
+  -S  --sparse           sparse files handling
+  -b  --backup           make backups using the "~~" suffix (into folder hierarchy), use --backup-dir and --suffix to modify base backup dir and backup suffix. A second sync will remove backups as well!
+  -h  --human-readable   ...
+  -c  --checksum         compute checksum, don't use name, time and size
+  --stats                show traffic stats
+  --existing             only update files already there
+  --ignore-existing      stronger than -u: don't copy existing files, even if older than in source
+  --prune-empty-dirs     on target, if updating
+  -z, --compress --compress-level=9

@@ -1,66 +1,32 @@
 # (C) 2017-2021 Arne Bachmann. All rights reserved
+# TODO add encoding header
 
-# rsync wrapper script that supports humans in detecting dangerous changes to a folder structure synchronization.
+# TODO rsync wrapper script that supports humans in detecting dangerous changes to a folder structure synchronization.
 # The script highlights the main changes and detects potential unwanted file deletions, while hinting to moved files that might correspond to a folder rename or move.
 
 # TODO tests failing
 # TODO copying .git folders (or any dot-folders?) changes the owner and access rights! This leads to problems on consecutive syncs
 
-
-# rsync status output explanation:
-#   Source: https://stackoverflow.com/questions/4493525/rsync-what-means-the-f-on-rsync-logs
-#   1: > received,  . unchanged or modified (cf. below), c local change, * message, e.g. deleted, h hardlink, * = message following (no path)
-#   2: f file, d directory, L symlink, D device, S special
-#   3: c checksum of orther change
-#   4: s size change
-#   5: t time change
-#   6: p permission
-#   7: o owner
-#   8: g group
-#   9: u future
-#   10: a ACL (not available on all systems)
-#   11: x extended attributes (as above)
-
-# rsync options:
-#  https://linux.die.net/man/1/rsync
-#   -r  --recursive  recursive
-#   -R  --relative   preserves full path
-#   -u  --update     skip files newer in target (to avoid unnecessary write operations)
-#   -i  --itemize-changes  Show results (itemize - necessary to allow parsing)
-#   -t  --times            keep timestamps
-#   -S  --sparse           sparse files handling
-#   -b  --backup           make backups using the "~~" suffix (into folder hierarchy), use --backup-dir and --suffix to modify base backup dir and backup suffix. A second sync will remove backups as well!
-#   -h  --human-readable   ...
-#   -c  --checksum         compute checksum, don't use name, time and size
-#   --stats                show traffic stats
-#   --existing             only update files already there
-#   --ignore-existing      stronger than -u: don't copy existing files, even if older than in source
-#   --prune-empty-dirs     on target, if updating
-#   -z, --compress --compress-level=9
-
-
-# Standard modules
 from __future__ import annotations
 import collections, functools, os, subprocess, sys, time
-from typing import cast, Any, Callable, Dict, Iterable, List, Optional, Set, Tuple
+from typing import cast, Any, Callable, Dict, Iterable, List, NamedTuple, Optional, Set, Tuple
 from typing_extensions import Final
-assert sys.version_info >= (3, 6)  # 3.6 ensures maximum roundtrip chances
-time_start = time.time()
+assert sys.version_info >= (3, 7)  # version 3.6 ensures maximum roundtrip chances, but is end of live already
+time_start:float = time.time()
 
 
-# Constants
 MAX_MOVE_DIRS:int = 2  # don't display more than this number of potential directory moves
 MAX_EDIT_DISTANCE = 5  # insertions/deletions/replacements (and also moves for damerau-levenshtein)
-MB:int            = 1024 << 10
+MEBI:int          = 1024 << 10
 QUOTE:str = '"' if sys.platform == "win32" else ""
 FEXCLUDE:List[str] = ['*~~'] + ([".corruptdetect"] if '--with-checksums' not in sys.argv else [])  # ~~to avoid further copying of previous backups
 DEXCLUDE:List[str] = ['.redundir', '.imagesubsort_cache', '.imagesubsort_trash', '$RECYCLE.BIN', 'System Volume Information', 'Recovery', 'catalog Previews.lrdata']
 
-# Rsync output classification helpers
-State:Final[Dict[str,str]] =  {".": "unchanged", ">": "store", "c": "changed", "<": "restored", "*": "message"}  # rsync output marker detection
-Entry:Final[Dict[str,str]] =  {"f": "file", "d": "dir", "u": "unknown"}
+# Rsync output classification
+State: Final[Dict[str,str]]  = {".": "unchanged", ">": "store", "c": "changed", "<": "restored", "*": "message"}  # rsync output marker detection
+Entry: Final[Dict[str,str]]  = {"f": "file", "d": "dir", "u": "unknown"}
 Change:Final[Dict[str,bool]] = {".": False, "+": True, "s": True, "t": True}  # size/time have [.+st] in their position
-FileState = collections.namedtuple("FileState", ["state", "type", "change", "path", "newdir", "base"])  # 9 characters and one space before relative path
+FileState:NamedTuple = collections.namedtuple("FileState", ["state", "type", "change", "path", "newdir", "base"])  # 9 characters and one space before relative path
 
 
 # Utility functions TODO benchmark this
@@ -111,7 +77,7 @@ def parseLine(line:str) -> FileState:
 
 def constructCommand(simulate:bool, stats:bool = False) -> str:  # TODO -m prune empty dir chains from file list
   ''' Warning: Consults global variables. '''
-  if stats:  # TODO not accurate as missing ignores etc
+  if stats:  # TODO report is not accurate, as it's missing ignores etc.
     return f'{QUOTE}{rsyncPath}{QUOTE}' + \
        " -n --stats {rec}{addmode} '{source}' '{target}'".format(
         rec    ="-r " if not flat and not file else "",
@@ -119,14 +85,13 @@ def constructCommand(simulate:bool, stats:bool = False) -> str:  # TODO -m prune
         source =source,
         target =target
       )
-
   return f'{QUOTE}{rsyncPath}{QUOTE}' + \
          " {sim}{rec}{addmode}{delmode}{comp}{part}{bacmode}{units}{check} -i -t --no-i-r {exclude} '{source}' '{target}'".format(  # -t keep times, -i itemize
         sim    ="-n " if simulate else ("--info=progress2 -h " if protocol >= 31 or rversion >= (3, 1) else ""),
         rec    ="-r " if not flat and not file else "",  # TODO allow flat with --delete
-        addmode="--ignore-existing " if add else ("-I " if override else "-u "),  # --ignore-existing only copy additional files (vs. --existing: don't add new files) -u only copy if younger -I ignore times
+        addmode="--ignore-existing " if add else ("--existing" if delete else ("-I " if override else "-u ")),  # --ignore-existing only copy additional files (vs. --existing: don't add new files) -u only copy if younger -I ignore times
         delmode="--delete-after --prune-empty-dirs --delete-excluded " if sync else "",
-        comp   ="-S -z --compress-level=9 " if compress else "",
+        comp   ="-S -z --compress-level=6 " if compress else "",
         part   ="-P " if file else "",  # -P = --partial --progress
         bacmode=("-b --suffix='~~' " if backup else ""),
         units  =("" if simulate else "-hh --stats "),  # using SI-units
@@ -150,8 +115,9 @@ if __name__ == '__main__':
       using Drive:\~  -  use full source path on target drive
 
     Copy mode options (default: update):
-      --add                -a  Immediately copy only additional files (otherwise update modified files)
+      --add                -a  Immediately copy only additional files (otherwise add, and update modified)
       --sync               -s  Remove files in target if removed in source, including empty folders
+      --del                -d  Only remove files, do not add nor update
       --simulate           -n  Don't actually sync, stop after simulation
       --estimate               Estimate copy speed
       --file <file path>       Transfer a single local file instead of synchronizing a folder
@@ -165,7 +131,7 @@ if __name__ == '__main__':
       --force-copy             Force writing over existing files
 
     Generic options:
-      --flat       -1  Don't recurse into sub folders, only copy current folder
+      --flat       -1  Don't recurse into sub folders, only operate on current folder
       --checksum   -C  Full file comparison using checksums
       --compress   -c  Compress data during transport, handle many files better
       --verbose    -v  Show more output
@@ -178,6 +144,7 @@ if __name__ == '__main__':
   # Parse program options
   add      = '--add'        in sys.argv or '-a' in sys.argv
   sync     = '--sync'       in sys.argv or '-s' in sys.argv
+  delete   = '--del'        in sys.argv or '-d' in sys.argv
   simulate = '--simulate'   in sys.argv or '-n' in sys.argv
   force    = '--force'      in sys.argv or '-y' in sys.argv
   ask      = '--ask'        in sys.argv or '-i' in sys.argv
@@ -308,10 +275,10 @@ if __name__ == '__main__':
     line = [l for l in lines if l.startswith("Total file size:")][0]
     totalbytes:int = int(line.split("Total file size: ")[1].split(" bytes")[0].replace(",", ""))
     print(f"\nEstimated run time for {totalfiles} entries: %.1f (SSD) %.1f (HDD) %.1f (Ethernet) %.1f (USB 3.0)" % (
-      totalbytes / (60 *  130 * MB),   # SSD
-      totalbytes / (60 *   60 * MB),   # HDD
-      totalbytes / (60 * 12.5 * MB),   # 100 Mbit/s
-      totalbytes / (60 *  0.4 * MB)))  # USB 3.0 TODO really?
+      totalbytes / (60 *  130 * MEBI),   # SSD
+      totalbytes / (60 *   60 * MEBI),   # HDD
+      totalbytes / (60 * 12.5 * MEBI),   # 100 Mbit/s
+      totalbytes / (60 *  0.4 * MEBI)))  # USB 3.0 TODO really?
     if not ask: input("Hit Enter to continue.")
 
   # Simulation rsync run
@@ -356,10 +323,12 @@ if __name__ == '__main__':
       if not simulate and ask: input("Hit Enter to exit.")
       sys.exit(0)
     while ask:
-      selection = input(f"""Options:
-  show (a)dded ({len(added)}), (c)hanged ({len(modified)}), (r)emoved ({len(removes)}), (m)oved files ({len(potentialMoves)}), (A)dded ({len(newdirs)}:{sum(len(_) for _ in newdirs.values())}) or (M)oved ({len(potentialMoveDirs)}) folders:files
-  (y) - continue
-  Enter: exit.\n  => """).strip()
+      selection = input(textwrap.dedent(f"""Options:
+        show (a)dded ({len(added)}), (c)hanged ({len(modified)}), (r)emoved ({len(removes)}), (m)oved files ({len(potentialMoves)})
+        show (A)dded ({len(newdirs)}:{sum(len(_) for _ in newdirs.values())}), (M)oved ({len(potentialMoveDirs)}) folders:files
+        execute only (add), (sync), (update), (delete)
+        continue to {'sync' if sync else ('add' if add else 'update')} via (y)
+        exit via <Enter>\n  => """))
       if   selection == "a": print("\n".join("  "   + add for add in added))
       elif selection == "t": print("\n".join("  "   + add for add in sorted(added, key = lambda a: (a[a.rindex("."):] if "." in a else a) + a)))  # by file type
       elif selection == "c": print("\n".join("  > " + mod for mod in sorted(modified)))
@@ -368,6 +337,10 @@ if __name__ == '__main__':
       elif selection == "M": print("\n".join(f"  {_from} -> {_tos}" for _from, _tos in sorted(potentialMoveDirs.items())))
       elif selection == "A": print("\n".join(f"DIR {folder} ({len(files)} files)" + ("\n    " + "\n    ".join(files) if len(files) > 0 else "") for folder, files in sorted(newdirs.items())))
       elif selection == "y": force = True; break
+      elif selection[:3] == "add":  add = True;  sync = False; delete = False; force = True; break  # TODO run simulation/estimation again before exectution
+      elif selection[:4] == "sync": add = False; sync = True;  delete = False; force = True; break
+      elif selection[:2] == "up":   add = False; sync = False; delete = False; force = True; break
+      elif selection[:3] == "del":  add = False; sync = False; delete = True;  force = True; break
       else: sys.exit(1)
 
     if len(removes) + len(potentialMoves) + len(potentialMoveDirs) > 0 and not force:
