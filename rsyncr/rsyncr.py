@@ -15,6 +15,7 @@ assert sys.version_info >= (3, 7)  # version 3.6 ensures maximum roundtrip chanc
 from typing import cast, Any, Callable, Dict, Iterable, List, NamedTuple, Optional, Set, Tuple
 from typing_extensions import Final
 from .distance import cygwinify, distance
+from .help import help
 
 
 # Parse program options
@@ -31,9 +32,11 @@ checksum = '--checksum'   in sys.argv or '-C' in sys.argv
 backup   = '--backup'     in sys.argv
 override = '--force-copy' in sys.argv
 estimate = '--estimate'   in sys.argv
+usage    = len(sys.argv) < 2 or '--help' in sys.argv or '-' in sys.argv or '-?' in sys.argv or '/?' in sys.argv
 force_foldername = '--force-foldername' in sys.argv or '-f' in sys.argv
 cwdParent = file = rsyncPath = source = target = ""
 protocol = 0; rversion = (0, 0)
+if usage: help()
 
 
 # Settings
@@ -272,44 +275,4 @@ def main():
   if verbose: print("Finished after %.1f minutes." % ((time.time() - time_start) / 60.))
 
 
-def help():
-  print(r"""rsyncr  (C) Arne Bachmann 2017-2022
-    This rsync-wrapper simplifies backing up the current directory tree.
-
-    Syntax:  rsyncr <target-path> [options]
-
-    target-path is either a local folder /path or Drive:\path  or a remote path [rsync://][user@]host:/path
-      using Drive:    -  use the drive's current folder (Windows only)
-      using Drive:\~  -  use full source path on target drive
-
-    Copy mode options (default: update):
-      --add                -a  Immediately copy only additional files (otherwise add, and update modified)
-      --sync               -s  Remove files in target if removed in source, including empty folders
-      --del                -d  Only remove files, do not add nor update
-      --simulate           -n  Don't actually sync, stop after simulation
-      --estimate               Estimate copy speed
-      --file <file path>       Transfer a single local file instead of synchronizing a folder
-      --user <user name>   -u  Manual remote user name specification, unless using user@host notation
-      --skip-move              Do not compute potential moves
-
-    Interactive options:
-      --ask                -i  In case of dangerous operation, ask user interactively
-      --force-foldername   -f  Sync even if target folder name differs
-      --force              -y  Sync even if deletions or moved files have been detected
-      --force-copy             Force writing over existing files
-
-    Generic options:
-      --flat       -1  Don't recurse into sub folders, only operate on current folder
-      --checksum   -C  Full file comparison using checksums
-      --compress   -c  Compress data during transport, handle many files better
-      --verbose    -v  Show more output
-      --help       -h  Show this information
-
-    Special options:
-      --with-checksums  corrupDetect compatibility: if set, .corrupdetect files are not ignored
-  """); sys.exit(0)
-
-
-if __name__ == '__main__':
-  if len(sys.argv) < 2 or '--help' in sys.argv or '-' in sys.argv: help()
-  main()
+if __name__ == '__main__': main()
