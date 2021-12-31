@@ -1,6 +1,7 @@
-# (C) 2017-2021 Arne Bachmann. All rights reserved
+# (C) 2017-2022 Arne Bachmann. All rights reserved
 # TODO add encoding header
 
+# TODO moved contains deleted - but uncertain?
 # TODO rsync wrapper script that supports humans in detecting dangerous changes to a folder structure synchronization.
 # The script highlights the main changes and detects potential unwanted file deletions, while hinting to moved files that might correspond to a folder rename or move.
 
@@ -8,13 +9,34 @@
 # TODO copying .git folders (or any dot-folders?) changes the owner and access rights! This leads to problems on consecutive syncs
 
 from __future__ import annotations
-import collections, functools, os, subprocess, sys, time
+import time; time_start:float = time.time()
+import collections, functools, os, subprocess, sys, textwrap
+assert sys.version_info >= (3, 7)  # version 3.6 ensures maximum roundtrip chances, but is end of live already
 from typing import cast, Any, Callable, Dict, Iterable, List, NamedTuple, Optional, Set, Tuple
 from typing_extensions import Final
-assert sys.version_info >= (3, 7)  # version 3.6 ensures maximum roundtrip chances, but is end of live already
-time_start:float = time.time()
+from .distance import cygwinify, distance
 
 
+# Parse program options
+add      = '--add'        in sys.argv or '-a' in sys.argv
+sync     = '--sync'       in sys.argv or '-s' in sys.argv
+delete   = '--del'        in sys.argv or '-d' in sys.argv
+simulate = '--simulate'   in sys.argv or '-n' in sys.argv
+force    = '--force'      in sys.argv or '-y' in sys.argv
+ask      = '--ask'        in sys.argv or '-i' in sys.argv
+flat     = '--flat'       in sys.argv or '-1' in sys.argv
+compress = '--compress'   in sys.argv or '-c' in sys.argv
+verbose  = '--verbose'    in sys.argv or '-v' in sys.argv
+checksum = '--checksum'   in sys.argv or '-C' in sys.argv
+backup   = '--backup'     in sys.argv
+override = '--force-copy' in sys.argv
+estimate = '--estimate'   in sys.argv
+force_foldername = '--force-foldername' in sys.argv or '-f' in sys.argv
+cwdParent = file = rsyncPath = source = target = ""
+protocol = 0; rversion = (0, 0)
+
+
+# Settings
 MAX_MOVE_DIRS:int = 2  # don't display more than this number of potential directory moves
 MAX_EDIT_DISTANCE = 5  # insertions/deletions/replacements (and also moves for damerau-levenshtein)
 MEBI:int          = 1024 << 10
@@ -34,38 +56,26 @@ def xany(pred:Callable[[Any], bool], lizt:Iterable[Any]) -> bool: return functoo
 def xall(pred:Callable[[Any], bool], lizt:Iterable[Any]) -> bool: return functools.reduce(lambda a, b: a and pred(b), lizt if hasattr(lizt, '__iter__') else list(lizt), True)
 
 
-# Conditional function definition for cygwin under Windows
-if sys.platform == 'win32':  # this assumes that the rsync for windows build is using cygwin internals
-  def cygwinify(path:str) -> str:
-    p = path.replace("\\", "/")
-    while "//" in p: p = p.replace("//", "/")
-    while "::" in p: p = p.replace("::", ":")
-    if ":" in p:  # cannot use os.path.splitdrive on linux/cygwin
-      x = p.split(":")
-      p = "/cygdrive/" + x[0].lower() + x[1]
-    return p[:-1] if p[-1] == "/" else p
-else:
-  def cygwinify(path:str) -> str: return path[:-1] if path[-1] == "/" else path
-
-
 def parseLine(line:str) -> FileState:
   ''' Parse one rsync item.
-  >>> print(parseLine("*deleting   05 - Bulgarien/IMG_0648.JPG"))
-  FileState(state='deleted', type='unknown', change=True, path='/07/05 - Bulgarien/IMG_0648.JPG', newdir=False)
-  >>> print(parseLine(">f+++++++++ 05 - Bulgarien/07/IMG_0682.JPG"))
-  FileState(state='store', type='file', change=False, path='/07/05 - Bulgarien/07/IMG_0682.JPG', newdir=False)
-  '''
-  atts:str = line.split(" ")[0]  # until space between itemization info and path
-  path:str = line[line.index(" ") + 1:]  # TODO combine commands
 
+  Must be called from the checkout folder.
+  >>> print(parseLine("cd+++++++++ 05 - Bulgarien/07"))
+  FileState(state='changed', type='dir', change=False, path='/rsyncr/05 - Bulgarien/07', newdir=True, base='07')
+  >>> print(parseLine("*deleting   05 - Bulgarien/IMG_0648.JPG"))
+  FileState(state='deleted', type='unknown', change=True, path='/rsyncr/05 - Bulgarien/IMG_0648.JPG', newdir=False, base='IMG_0648.JPG')
+  >>> print(parseLine(">f+++++++++ 05 - Bulgarien/07/IMG_0682.JPG"))
+  FileState(state='store', type='file', change=False, path='/rsyncr/05 - Bulgarien/07/IMG_0682.JPG', newdir=False, base='IMG_0682.JPG')
+  '''
+  atts:str  = line.split(" ")[0]  # until space between itemization info and path
+  path:str  = line[line.index(" ") + 1:].lstrip(" ")
   state:str = cast(str, State.get(atts[0]))  # *deleting
   if state != "message":
-    entry = Entry.get(atts[1])  # f:file, d:dir
+    entry:str = Entry.get(atts[1], ""); assert entry  # f:file, d:dir
     change:bool = xany(lambda _: _ in "cstpoguax", atts[2:])  # check attributes for any change
   else:
     entry = Entry["u"]  # unknown type
     change = True
-  while path.startswith(" "): path = path[1:]
   path = cygwinify(os.path.abspath(path))
   newdir:bool = atts[:2] == "cd" and xall(lambda _: _ == "+", atts[2:])
   if state == "message" and atts[1:] == "deleting": state = "deleted"
@@ -75,89 +85,38 @@ def parseLine(line:str) -> FileState:
   return FileState(state, entry, change, path, newdir, os.path.basename(path))
 
 
-def constructCommand(simulate:bool, stats:bool = False) -> str:  # TODO -m prune empty dir chains from file list
-  ''' Warning: Consults global variables. '''
-  if stats:  # TODO report is not accurate, as it's missing ignores etc.
-    return f'{QUOTE}{rsyncPath}{QUOTE}' + \
-       " -n --stats {rec}{addmode} '{source}' '{target}'".format(
-        rec    ="-r " if not flat and not file else "",
-        addmode="--ignore-existing " if add else ("-I " if override else "-u "),  # -I ignore-times (size only)
-        source =source,
-        target =target
-      )
+def estimateDuration() -> str:
   return f'{QUOTE}{rsyncPath}{QUOTE}' + \
-         " {sim}{rec}{addmode}{delmode}{comp}{part}{bacmode}{units}{check} -i -t --no-i-r {exclude} '{source}' '{target}'".format(  # -t keep times, -i itemize
-        sim    ="-n " if simulate else ("--info=progress2 -h " if protocol >= 31 or rversion >= (3, 1) else ""),
-        rec    ="-r " if not flat and not file else "",  # TODO allow flat with --delete
-        addmode="--ignore-existing " if add else ("--existing" if delete else ("-I " if override else "-u ")),  # --ignore-existing only copy additional files (vs. --existing: don't add new files) -u only copy if younger -I ignore times
-        delmode="--delete-after --prune-empty-dirs --delete-excluded " if sync else "",
-        comp   ="-S -z --compress-level=6 " if compress else "",
-        part   ="-P " if file else "",  # -P = --partial --progress
-        bacmode=("-b --suffix='~~' " if backup else ""),
-        units  =("" if simulate else "-hh --stats "),  # using SI-units
-        check  ="-c" if checksum else "",
-        exclude=" ".join(f"--exclude='{fe}' --filter='P {fe}' "   for fe in FEXCLUDE) +
-                " ".join(f"--exclude='{de}/' --filter='P {de}/' " for de in DEXCLUDE),  # P = exclude from deletion, meaning not copied, but also not removed it exists only in target.
-        source =source,
-        target =target
+     " -n --stats {rec}{addmode} '{source}' '{target}'".format(
+      rec="-r " if not flat and not file else "",
+      addmode="--ignore-existing " if add else ("-I " if override else "-u "),  # -I ignore-times (size only)
+      source=source,
+      target=target
     )
 
 
-# Main script code
-if __name__ == '__main__':
-  if len(sys.argv) < 2 or '--help' in sys.argv or '-' in sys.argv: print(r"""rsyncr  (C) Arne Bachmann 2017-2021
-    This rsync-wrapper simplifies backing up the current directory tree.
+def constructCommand(simulate:bool) -> str:  # TODO -m prune empty dir chains from file list
+  return f'{QUOTE}{rsyncPath}{QUOTE}' + \
+       " {sim}{rec}{addmode}{delmode}{comp}{part}{bacmode}{units}{check} -i -t --no-i-r {exclude} '{source}' '{target}'".format(  # -t keep times, -i itemize
+      sim="-n " if simulate else ("--info=progress2 -h " if protocol >= 31 or rversion >= (3, 1) else ""),
+      rec="-r " if not flat and not file else "",  # TODO allow flat with --delete
+      addmode="--ignore-existing " if add else ("--existing " if delete else ("-I " if override else "-u ")),  # --ignore-existing only copy additional files (vs. --existing: don't add new files) -u only copy if younger -I ignore times
+      delmode="--delete-after --prune-empty-dirs --delete-excluded " if sync or delete else "",
+      comp="-S -z --compress-level=6 " if compress else "",
+      part="-P " if file else "",  # -P = --partial --progress
+      bacmode=("-b --suffix='~~' " if backup else ""),
+      units=("" if simulate else "-hh --stats "),  # using SI-units
+      check="-c" if checksum else "",
+      exclude=" ".join(f"--exclude='{fe}' --filter='P {fe}' "   for fe in FEXCLUDE) +
+              " ".join(f"--exclude='{de}/' --filter='P {de}/' " for de in DEXCLUDE),  # P = exclude from deletion, meaning not copied, but also not removed it exists only in target.
+      source=source,
+      target=target
+    )
 
-    Syntax:  rsyncr <target-path> [options]
 
-    target-path is either a local folder /path or Drive:\path  or a remote path [rsync://][user@]host:/path
-      using Drive:    -  use the drive's current folder (Windows only)
-      using Drive:\~  -  use full source path on target drive
-
-    Copy mode options (default: update):
-      --add                -a  Immediately copy only additional files (otherwise add, and update modified)
-      --sync               -s  Remove files in target if removed in source, including empty folders
-      --del                -d  Only remove files, do not add nor update
-      --simulate           -n  Don't actually sync, stop after simulation
-      --estimate               Estimate copy speed
-      --file <file path>       Transfer a single local file instead of synchronizing a folder
-      --user <user name>   -u  Manual remote user name specification, unless using user@host notation
-      --skip-move              Do not compute potential moves
-
-    Interactive options:
-      --ask                -i  In case of dangerous operation, ask user interactively
-      --force-foldername   -f  Sync even if target folder name differs
-      --force              -y  Sync even if deletions or moved files have been detected
-      --force-copy             Force writing over existing files
-
-    Generic options:
-      --flat       -1  Don't recurse into sub folders, only operate on current folder
-      --checksum   -C  Full file comparison using checksums
-      --compress   -c  Compress data during transport, handle many files better
-      --verbose    -v  Show more output
-      --help       -h  Show this information
-
-    Special options:
-      --with-checksums  corrupDetect compatibility: if set, .corrupdetect files are not ignored
-  """); sys.exit(0)
-
-  # Parse program options
-  add      = '--add'        in sys.argv or '-a' in sys.argv
-  sync     = '--sync'       in sys.argv or '-s' in sys.argv
-  delete   = '--del'        in sys.argv or '-d' in sys.argv
-  simulate = '--simulate'   in sys.argv or '-n' in sys.argv
-  force    = '--force'      in sys.argv or '-y' in sys.argv
-  ask      = '--ask'        in sys.argv or '-i' in sys.argv
-  flat     = '--flat'       in sys.argv or '-1' in sys.argv
-  compress = '--compress'   in sys.argv or '-c' in sys.argv
-  verbose  = '--verbose'    in sys.argv or '-v' in sys.argv
-  checksum = '--checksum'   in sys.argv or '-C' in sys.argv
-  backup   = '--backup'     in sys.argv
-  override = '--force-copy' in sys.argv
-  estimate = '--estimate'   in sys.argv
-  force_foldername = '--force-foldername' in sys.argv or '-f' in sys.argv
-
+def main():
   # Source handling
+  global add, sync, delete, cwdParent, file, rsyncPath, source, target, protocol, version
   file = sys.argv[sys.argv.index('--file') + 1] if '--file' in sys.argv else None
   if file:
     del sys.argv[sys.argv.index('--file'):sys.argv.index('--file') + 2]
@@ -166,7 +125,7 @@ if __name__ == '__main__':
     print(f"Running in single file transfer mode for '{file}'")
     while len(file) > 0 and file[0] == '/': file = file[1:]
     while len(file) > 0 and file[-1] == '/': file = file[:-1]
-  
+
   # Target handling. Accepted target paths: D: (cwd on D:), or /local_path, or D:\local_path, or rsync://path, or rsync://user@path, arnee@rsync.hidrive.strato.com:/users/arnee/path/
   user:Optional[str] = sys.argv[sys.argv.index('--user') + 1] if '--user' in sys.argv else None
   if user: del sys.argv[sys.argv.index('--user'):sys.argv.index('--user') + 2]
@@ -186,7 +145,7 @@ if __name__ == '__main__':
     remote = cast(str, user) + "@" + host
     target = remote + ":" + path  # TODO this simply reconstructs what ws deconstructed above, right?
   else:  # local mode
-    if sys.argv[1].strip().endswith(":"):  # just a drive letter - meaning currently selected folder of that drive! otherwise use drive + backslash (D:\)
+    if sys.argv[1].strip().endswith(":"):  # just a drive letter - means current folder on that drive
       olddrive = os.path.abspath(os.getcwd())
       os.chdir(sys.argv[1])    # change drive
       drivepath = os.getcwd()  # get current folder on that drive
@@ -197,52 +156,9 @@ if __name__ == '__main__':
     if drivepath != '--test' and not os.path.exists(drivepath): raise Exception(f"Target folder '{drivepath}' doesn't exist. Create it manually to sync. This avoids bad surprises!")
     target = cygwinify(os.path.abspath(drivepath))
 
-  try:  # https://github.com/seatgeek/fuzzywuzzy (+ https://github.com/ztane/python-Levenshtein/) TODO avoid this try chain if --no-move
-    from fuzzywuzzy import fuzz  # type: ignore
-    def distance(a, b): return (100 - fuzz.ratio(a, b)) / 20  # similarity score 0..100
-    assert distance("abc", "abe") == 1.65; assert distance("abc", "cbe") == 3.35
-    if verbose: print("Using fuzzywuzzy library")
-  except:
-    try:
-      from textdistance import distance as _distance  # type: ignore  # https://github.com/orsinium/textdistance, now for Python 2 as well
-      def distance(a, b): return _distance('l', a, b)  # type: ignore  # h = hamming, l = levenshtein, dl = damerau-levenshtein
-      assert distance("abc", "cbe") == 2  # until bug has been fixed
-      if verbose: print("Using textdistance library")
-    except:
-      try:
-        from stringdist import levenshtein as distance  # type: ignore  # https://pypi.python.org/pypi/StringDist/1.0.9
-        assert distance("abc", "cbe") == 2
-        if verbose: print("Using StringDist library")
-      except:
-        try:
-          from brew_distance import distance as _distance  # type: ignore  # https://github.com/dhgutteridge/brew-distance  slow implementation
-          def distance(a, b): return _distance(a, b)[0]  # [1] contains operations  # type: ignore
-          assert distance("abc", "cbe") == 2  # until bug has been fixed
-          if verbose: print("Using brew_distance library")
-        except:
-          try:
-            from edit_distance import SequenceMatcher as _distance  # type: ignore  # https://github.com/belambert/edit-distance  slow implementation
-            def distance(a, b): return _distance(a, b).distance()
-            assert distance("abc", "cbe") == 2
-            if verbose: print("Using edit_distance library")
-          except:
-            try:
-              from editdistance_s import distance  # type: ignore  # https://github.com/asottile/editdistance-s
-              assert distance("abc", "cbe") == 2
-              if verbose: print("Using editdistance_s library")
-            except:
-              try:  # https://github.com/asottile/editdistance-s
-                from editdistance import eval as distance  # type: ignore  # https://pypi.python.org/pypi/editdistance/0.2
-                assert distance("abc", "cbe") == 2
-                if verbose: print("Using editdistance library")
-              except:
-                def distance(a, b): return 0 if a == b else 1  # simple distance measure fallback
-                assert distance("abc", "cbe") == 1
-                if verbose: print("Using simple comparison")
-
   # Preprocess source and target folders
-  rsyncPath:str = os.getenv("RSYNC", "rsync")  # allows definition of custom executable
-  cwdParent:str = cygwinify(os.path.dirname(os.getcwd()))  # because current directory's name may not exist in target, we need to track its contents as its own folder
+  rsyncPath = os.getenv("RSYNC", "rsync")  # allows definition of custom executable
+  cwdParent = cygwinify(os.path.dirname(os.getcwd()))  # because current directory's name may not exist in target, we need to track its contents as its own folder
   if '--test' in sys.argv: import doctest; doctest.testmod(); sys.exit(0)
   if target[-1] != "/": target += "/"
   source = cygwinify(os.getcwd()); source += "/"
@@ -260,14 +176,14 @@ if __name__ == '__main__':
 
 
   # Determine total file size
-  output = subprocess.Popen(f"{QUOTE}{rsyncPath}{QUOTE} --version", shell=True, stdout=subprocess.PIPE, stderr=sys.stderr).communicate()[0].decode(sys.stdout.encoding).replace("\r\n", "\n").split("\n")[0]
-  protocol:int = int(output.split("protocol version ")[1])
+  output:str = subprocess.Popen(f"{QUOTE}{rsyncPath}{QUOTE} --version", shell=True, stdout=subprocess.PIPE, stderr=sys.stderr).communicate()[0].decode(sys.stdout.encoding).replace("\r\n", "\n").split("\n")[0]
+  protocol = int(output.split("protocol version ")[1])
   assert output.startswith("rsync"), f"Cannot determine rsync version: {output}"  # e.g. rsync  version 3.0.4  protocol version 30)
-  rversion:Tuple[int,int] = cast(Tuple[int,int], tuple([int(_) for _ in output.split("version ")[1].split(" ")[0].split(".")[:2]]))
+  rversion = cast(Tuple[int,int], tuple([int(_) for _ in output.split("version ")[1].split(" ")[0].split(".")[:2]]))
   print(f"Detected rsync version {rversion[0]}.{rversion[1]}.x  protocol {protocol}")
 
   if estimate:
-    command:str = constructCommand(simulate=True, stats=True)
+    command:str = estimateDuration()
     if verbose: print(f"\nAnalyzing: {command}")
     lines:List[str] = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=sys.stderr).communicate()[0].decode(sys.stdout.encoding).replace("\r\n", "\n").split("\n")
     line:str = [l for l in lines if l.startswith("Number of files:")][0]
@@ -326,9 +242,9 @@ if __name__ == '__main__':
       selection = input(textwrap.dedent(f"""Options:
         show (a)dded ({len(added)}), (c)hanged ({len(modified)}), (r)emoved ({len(removes)}), (m)oved files ({len(potentialMoves)})
         show (A)dded ({len(newdirs)}:{sum(len(_) for _ in newdirs.values())}), (M)oved ({len(potentialMoveDirs)}) folders:files
-        execute only (add), (sync), (update), (delete)
-        continue to {'sync' if sync else ('add' if add else 'update')} via (y)
-        exit via <Enter>\n  => """))
+        only (add), (sync), (update), (delete)
+        or continue to {'sync' if sync else ('add' if add else 'update')} via (y)
+        exit via <Enter> or (x)\n  => """))
       if   selection == "a": print("\n".join("  "   + add for add in added))
       elif selection == "t": print("\n".join("  "   + add for add in sorted(added, key = lambda a: (a[a.rindex("."):] if "." in a else a) + a)))  # by file type
       elif selection == "c": print("\n".join("  > " + mod for mod in sorted(modified)))
@@ -340,21 +256,60 @@ if __name__ == '__main__':
       elif selection[:3] == "add":  add = True;  sync = False; delete = False; force = True; break  # TODO run simulation/estimation again before exectution
       elif selection[:4] == "sync": add = False; sync = True;  delete = False; force = True; break
       elif selection[:2] == "up":   add = False; sync = False; delete = False; force = True; break
-      elif selection[:3] == "del":  add = False; sync = False; delete = True;  force = True; break
+      elif selection[:3] in ("del", "rem"):
+                                    add = False; sync = False; delete = True;  force = True; break
       else: sys.exit(1)
 
     if len(removes) + len(potentialMoves) + len(potentialMoveDirs) > 0 and not force:
       print("\nPotentially harmful changes detected. Use --force or -y to run rsync anyway.")
       sys.exit(1)
 
-  # Main rsync execution with some stats output
-  if simulate:
-    if verbose: print("Finished after %.1f minutes." % ((time.time() - time_start) / 60.))
-    sys.exit(0)
+  if not simulate:  # quit without execution
+    command = constructCommand(simulate=False)
+    if verbose: print(f"\nExecuting: {command}")
+    subprocess.Popen(command, shell=True, stdout=sys.stdout, stderr=sys.stderr).wait()
 
-  command = constructCommand(simulate=False)
-  if verbose: print(f"\nExecuting: {command}")
-  subprocess.Popen(command, shell=True, stdout=sys.stdout, stderr=sys.stderr).wait()
-
-  # Quit
   if verbose: print("Finished after %.1f minutes." % ((time.time() - time_start) / 60.))
+
+
+def help():
+  print(r"""rsyncr  (C) Arne Bachmann 2017-2022
+    This rsync-wrapper simplifies backing up the current directory tree.
+
+    Syntax:  rsyncr <target-path> [options]
+
+    target-path is either a local folder /path or Drive:\path  or a remote path [rsync://][user@]host:/path
+      using Drive:    -  use the drive's current folder (Windows only)
+      using Drive:\~  -  use full source path on target drive
+
+    Copy mode options (default: update):
+      --add                -a  Immediately copy only additional files (otherwise add, and update modified)
+      --sync               -s  Remove files in target if removed in source, including empty folders
+      --del                -d  Only remove files, do not add nor update
+      --simulate           -n  Don't actually sync, stop after simulation
+      --estimate               Estimate copy speed
+      --file <file path>       Transfer a single local file instead of synchronizing a folder
+      --user <user name>   -u  Manual remote user name specification, unless using user@host notation
+      --skip-move              Do not compute potential moves
+
+    Interactive options:
+      --ask                -i  In case of dangerous operation, ask user interactively
+      --force-foldername   -f  Sync even if target folder name differs
+      --force              -y  Sync even if deletions or moved files have been detected
+      --force-copy             Force writing over existing files
+
+    Generic options:
+      --flat       -1  Don't recurse into sub folders, only operate on current folder
+      --checksum   -C  Full file comparison using checksums
+      --compress   -c  Compress data during transport, handle many files better
+      --verbose    -v  Show more output
+      --help       -h  Show this information
+
+    Special options:
+      --with-checksums  corrupDetect compatibility: if set, .corrupdetect files are not ignored
+  """); sys.exit(0)
+
+
+if __name__ == '__main__':
+  if len(sys.argv) < 2 or '--help' in sys.argv or '-' in sys.argv: help()
+  main()

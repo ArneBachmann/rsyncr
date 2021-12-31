@@ -46,9 +46,5 @@ setup(
 #  package_data={"": ["check.py", "run.py"]},
   include_package_data=False,  # if True, will *NOT* package the data!
   zip_safe=False,
-  entry_points={
-    'console_scripts': [
-      'rsyncr=rsyncr.run:main'  # TODO call function directly once refactored from main script
-    ]
-  },
+  entry_points={ 'console_scripts': [ 'rsyncr=rsyncr.rsyncr:main' ] },
 )
