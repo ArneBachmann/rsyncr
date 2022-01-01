@@ -10,10 +10,11 @@
 
 from __future__ import annotations
 import time; time_start:float = time.time()
-import collections, functools, os, subprocess, sys, textwrap
+import functools, os, subprocess, sys, textwrap
 assert sys.version_info >= (3, 7)  # version 3.6 ensures maximum roundtrip chances, but is end of live already
-from typing import cast, Any, Callable, Dict, Iterable, List, NamedTuple, Optional, Set, Tuple
+from typing import cast, Any, Callable, Dict, Iterable, List, NamedTuple, Optional, Set, Tuple, TypeVar
 from typing_extensions import Final
+T = TypeVar('T')
 from .distance import cygwinify, distance
 from .help import help
 
@@ -47,16 +48,17 @@ QUOTE:str = '"' if sys.platform == "win32" else ""
 FEXCLUDE:List[str] = ['*~~'] + ([".corruptdetect"] if '--with-checksums' not in sys.argv else [])  # ~~to avoid further copying of previous backups
 DEXCLUDE:List[str] = ['.redundir', '.imagesubsort_cache', '.imagesubsort_trash', '$RECYCLE.BIN', 'System Volume Information', 'Recovery', 'catalog Previews.lrdata']
 
-# Rsync output classification
-State: Final[Dict[str,str]]  = {".": "unchanged", ">": "store", "c": "changed", "<": "restored", "*": "message"}  # rsync output marker detection
-Entry: Final[Dict[str,str]]  = {"f": "file", "d": "dir", "u": "unknown"}
-Change:Final[Dict[str,bool]] = {".": False, "+": True, "s": True, "t": True}  # size/time have [.+st] in their position
-FileState:NamedTuple = collections.namedtuple("FileState", ["state", "type", "change", "path", "newdir", "base"])  # 9 characters and one space before relative path
-
-
 # Utility functions TODO benchmark this
 def xany(pred:Callable[[Any], bool], lizt:Iterable[Any]) -> bool: return functools.reduce(lambda a, b: a or  pred(b), lizt if hasattr(lizt, '__iter__') else list(lizt), False)
 def xall(pred:Callable[[Any], bool], lizt:Iterable[Any]) -> bool: return functools.reduce(lambda a, b: a and pred(b), lizt if hasattr(lizt, '__iter__') else list(lizt), True)
+def intern(d:Dict[str,T]) -> Dict[str,T]: return {sys.intern(k): sys.intern(v) if isinstance(v, str) else v for k, v in d.items()}
+
+
+# Rsync output classification
+State: Final[Dict[str,str]]  = intern({".": "unchanged", ">": "store", "c": "changed", "<": "restored", "*": "message"})  # rsync output marker detection
+Entry: Final[Dict[str,str]]  = intern({"f": "file", "d": "dir", "u": "unknown"})
+Change:Final[Dict[str,bool]] = {".": False, "+": True, "s": True, "t": True}  # size/time have [.+st] in their position
+FileState:NamedTuple = NamedTuple("FileState", [("state", str), ("type", str), ("change", bool), ("path", str), ("newdir", bool), ("base", str)])  # 9 characters and one space before relative path
 
 
 def parseLine(line:str) -> FileState:
@@ -72,7 +74,7 @@ def parseLine(line:str) -> FileState:
   '''
   atts:str  = line.split(" ")[0]  # until space between itemization info and path
   path:str  = line[line.index(" ") + 1:].lstrip(" ")
-  state:str = cast(str, State.get(atts[0]))  # *deleting
+  state:str = State.get(atts[0], "")  # *deleting
   if state != "message":
     entry:str = Entry.get(atts[1], ""); assert entry  # f:file, d:dir
     change:bool = xany(lambda _: _ in "cstpoguax", atts[2:])  # check attributes for any change
@@ -85,7 +87,7 @@ def parseLine(line:str) -> FileState:
   try: assert path.startswith(cwdParent + "/") or path == cwdParent
   except: raise Exception(f"Wrong path prefix: {path} vs {cwdParent}")
   path = path[len(cwdParent):]
-  return FileState(state, entry, change, path, newdir, os.path.basename(path))
+  return FileState(state, entry, change, sys.intern(path), newdir, sys.intern(os.path.basename(path)))
 
 
 def estimateDuration() -> str:
@@ -162,7 +164,9 @@ def main():
   # Preprocess source and target folders
   rsyncPath = os.getenv("RSYNC", "rsync")  # allows definition of custom executable
   cwdParent = cygwinify(os.path.dirname(os.getcwd()))  # because current directory's name may not exist in target, we need to track its contents as its own folder
-  if '--test' in sys.argv: import doctest; doctest.testmod(); sys.exit(0)
+  if '--test' in sys.argv:
+    import doctest; from . import distance
+    sys.exit(doctest.testmod()[0] or doctest.testmod(distance)[0])
   if target[-1] != "/": target += "/"
   source = cygwinify(os.getcwd()); source += "/"
   if not remote:
@@ -214,15 +218,14 @@ def main():
     # TODO why exclude files in newdirs from being recognized as moved? must be complementary to the movedirs logic
 
     # Main logic: Detect files and relationships
-    #@functools.lru_cache(maxsize=99999)
-    def new(entry:FileState) -> List[str]: return [e.path for e in addNames if e is not entry and entry.base == e.base]  # all entries not being the first one (which they shouldn't be anyway)
+    def new(entry:FileState) -> Set[str]: return {e.path for e in addNames if entry.base is e.base}  # all entries not being the first one (which they shouldn't be anyway)
     addNames:List[FileState] = [f for f in entries if f.state == "store"]
-    potentialMoves:Dict[str,List[str]] = {old.path: new(old) for old in entries if old.type == "unknown" and old.state == "deleted"}  # what about modified?
+    potentialMoves:Dict[str,Set[str]] = {old.path: new(old) for old in entries if old.type == "unknown" and old.state == "deleted"}  # what about modified?
     removes:Set[str] = {rem for rem, froms in potentialMoves.items() if not froms}  # exclude entries that have no origin
     potentialMoves = {k: v for k, v in potentialMoves.items() if k not in removes}
-    modified:List[str] = [entry.path for entry in entries if entry.type == "file" and entry.change and entry.path not in removes and entry.path not in potentialMoves]
+    modified:Set[str] = {entry.path for entry in entries if entry.type == "file" and entry.change and entry.path not in removes and entry.path not in potentialMoves}
     added:Set[str] = {entry.path for entry in entries if entry.type == "file" and entry.state in ("store", "changed") and entry.path and not xany(lambda a: entry.path in a, potentialMoves.values())}  # latter is a weak check
-    modified[:] = [name for name in modified if name not in added]
+    modified = [name for name in modified if name not in added]
     potentialMoveDirs:Dict[str,str] = {}
     if not add and '--skip-move' not in sys.argv and '--skip-moves' not in sys.argv:
       if verbose: print("Computing potential directory moves")  # HINT: a check if all removed files can be found in a new directory cannot be done, as we only that that a directory has been deleted, but nothing about its files
@@ -245,9 +248,9 @@ def main():
       selection = input(textwrap.dedent(f"""Options:
         show (a)dded ({len(added)}), (c)hanged ({len(modified)}), (r)emoved ({len(removes)}), (m)oved files ({len(potentialMoves)})
         show (A)dded ({len(newdirs)}:{sum(len(_) for _ in newdirs.values())}), (M)oved ({len(potentialMoveDirs)}) folders:files
-        only (add), (sync), (update), (delete)
+        only (add), (sync), (update), (delete)/(remove)
         or continue to {'sync' if sync else ('add' if add else 'update')} via (y)
-        exit via <Enter> or (x)\n  => """))
+        exit via <Enter>, (q) or (x)\n  => """))
       if   selection == "a": print("\n".join("  "   + add for add in added))
       elif selection == "t": print("\n".join("  "   + add for add in sorted(added, key = lambda a: (a[a.rindex("."):] if "." in a else a) + a)))  # by file type
       elif selection == "c": print("\n".join("  > " + mod for mod in sorted(modified)))
