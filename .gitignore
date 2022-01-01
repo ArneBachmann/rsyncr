@@ -2,6 +2,7 @@
 __pycache__/
 *.py[cod]
 *$py.class
+rsyncr/version.py
 
 # C extensions
 *.so

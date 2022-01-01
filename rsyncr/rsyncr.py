@@ -10,16 +10,16 @@
 
 from __future__ import annotations
 import time; time_start:float = time.time()
-import functools, os, subprocess, sys, textwrap
-assert sys.version_info >= (3, 7)  # version 3.6 ensures maximum roundtrip chances, but is end of live already
+import functools, logging, os, subprocess, sys, textwrap
+assert sys.version_info >= (3, 7)  # version 3.6 was required in 2017 to ensure maximum roundtrip chances, but is end of live already in 2022
 from typing import cast, Any, Callable, Dict, Iterable, List, NamedTuple, Optional, Set, Tuple, TypeVar
-from typing_extensions import Final
-T = TypeVar('T')
+from typing_extensions import Final; T = TypeVar('T')
 from .distance import cygwinify, distance
 from .help import help
 
 
 # Parse program options
+if len(sys.argv) < 2 or '--help' in sys.argv or '-' in sys.argv or '-?' in sys.argv or '/?' in sys.argv: help()
 add      = '--add'        in sys.argv or '-a' in sys.argv
 sync     = '--sync'       in sys.argv or '-s' in sys.argv
 delete   = '--del'        in sys.argv or '-d' in sys.argv
@@ -33,11 +33,12 @@ checksum = '--checksum'   in sys.argv or '-C' in sys.argv
 backup   = '--backup'     in sys.argv
 override = '--force-copy' in sys.argv
 estimate = '--estimate'   in sys.argv
-usage    = len(sys.argv) < 2 or '--help' in sys.argv or '-' in sys.argv or '-?' in sys.argv or '/?' in sys.argv
 force_foldername = '--force-foldername' in sys.argv or '-f' in sys.argv
 cwdParent = file = rsyncPath = source = target = ""
 protocol = 0; rversion = (0, 0)
-if usage: help()
+
+logging.basicConfig(level=logging.DEBUG if verbose else logging.INFO, stream=sys.stderr, format="%(message)s")
+_log = logging.getLogger(); debug, info, warn, error = _log.debug, _log.info, _log.warning, _log.error
 
 
 # Settings
@@ -59,6 +60,9 @@ State: Final[Dict[str,str]]  = intern({".": "unchanged", ">": "store", "c": "cha
 Entry: Final[Dict[str,str]]  = intern({"f": "file", "d": "dir", "u": "unknown"})
 Change:Final[Dict[str,bool]] = {".": False, "+": True, "s": True, "t": True}  # size/time have [.+st] in their position
 FileState:NamedTuple = NamedTuple("FileState", [("state", str), ("type", str), ("change", bool), ("path", str), ("newdir", bool), ("base", str)])  # 9 characters and one space before relative path
+
+
+def new(entry:FileState) -> Set[str]: return {e.path for e in addNames if entry.base is e.base}  # all entries not being the first one (which they shouldn't be anyway)
 
 
 def parseLine(line:str) -> FileState:
@@ -127,7 +131,7 @@ def main():
     del sys.argv[sys.argv.index('--file'):sys.argv.index('--file') + 2]
     if not os.path.exists(file): raise Exception(f"File not found '{file}'")
     file = file.replace("\\", "/")
-    print(f"Running in single file transfer mode for '{file}'")
+    info(f"Running in single file transfer mode for '{file}'")
     while len(file) > 0 and file[0] == '/': file = file[1:]
     while len(file) > 0 and file[-1] == '/': file = file[:-1]
 
@@ -140,7 +144,7 @@ def main():
     user = sys.argv[1].split("@")[0]
     sys.argv[1] = sys.argv[1].split("@")[1]
     remote = True
-  if user: print(f"Using remote account '{user}' for login")
+  if user: info(f"Using remote account '{user}' for login")
   remote = remote or ':' in sys.argv[1][2:]  # ignore potential drive letter separator (in local Windows paths)
   if remote:  # TODO use getpass library
     if not user: raise Exception("User name required for remote file upload")
@@ -177,9 +181,9 @@ def main():
     raise Exception(f"Are you sure you want to synchronize from '{source}' to '{target}' using different folder names? Use --force-foldername or -f if yes")  # TODO E: to F: shows also warning
   if file: source += file  # combine source folder (with trailing slash) with file name
   if verbose:
-    print(f"Operation: {'SIMULATE ' if simulate else ''}" + ("ADD" if add else ("UPDATE" if not sync else ("SYNC" if not override else "COPY"))))
-    print(f"Source: {source}")
-    print(f"Target: {target}")
+    info(f"Operation: {'SIMULATE ' if simulate else ''}" + ("ADD" if add else ("UPDATE" if not sync else ("SYNC" if not override else "COPY"))))
+    info(f"Source: {source}")
+    info(f"Target: {target}")
 
 
   # Determine total file size
@@ -187,17 +191,17 @@ def main():
   protocol = int(output.split("protocol version ")[1])
   assert output.startswith("rsync"), f"Cannot determine rsync version: {output}"  # e.g. rsync  version 3.0.4  protocol version 30)
   rversion = cast(Tuple[int,int], tuple([int(_) for _ in output.split("version ")[1].split(" ")[0].split(".")[:2]]))
-  print(f"Detected rsync version {rversion[0]}.{rversion[1]}.x  protocol {protocol}")
+  debug(f"Detected rsync version {rversion[0]}.{rversion[1]}.x  protocol {protocol}")
 
   if estimate:
     command:str = estimateDuration()
-    if verbose: print(f"\nAnalyzing: {command}")
+    debug(f"\nAnalyzing: {command}")
     lines:List[str] = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=sys.stderr).communicate()[0].decode(sys.stdout.encoding).replace("\r\n", "\n").split("\n")
     line:str = [l for l in lines if l.startswith("Number of files:")][0]
     totalfiles:int = int(line.split("Number of files: ")[1].split(" (")[0].replace(",", ""))
     line = [l for l in lines if l.startswith("Total file size:")][0]
     totalbytes:int = int(line.split("Total file size: ")[1].split(" bytes")[0].replace(",", ""))
-    print(f"\nEstimated run time for {totalfiles} entries: %.1f (SSD) %.1f (HDD) %.1f (Ethernet) %.1f (USB 3.0)" % (
+    info(f"\nEstimated run time for {totalfiles} entries: %.1f (SSD) %.1f (HDD) %.1f (Ethernet) %.1f (USB 3.0)" % (
       totalbytes / (60 *  130 * MEBI),   # SSD
       totalbytes / (60 *   60 * MEBI),   # HDD
       totalbytes / (60 * 12.5 * MEBI),   # 100 Mbit/s
@@ -207,8 +211,8 @@ def main():
   # Simulation rsync run
   if not file and (simulate or not add):  # only simulate in multi-file mode. in add-only mode we need not check for conflicts
     command = constructCommand(simulate=True)
-    if verbose: print(f"\nSimulating: {command}")
-    lines = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=sys.stderr).communicate()[0].decode(sys.stdout.encoding).replace("\r\n", "\n").split("\n")  # TODO allow different encodings per line? code was removed
+    debug(f"\nSimulating: {command}")
+    lines = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=sys.stderr).communicate()[0].decode(sys.stdout.encoding).replace("\r\n", "\n").split("\n")  # TODO allow different encodings per line? code was removed TODO also parse line-wise instead of slurp
     entries:List[FileState] = [parseLine(line) for line in lines if line != ""]  # parse itemized information
     entries[:] = [entry for entry in entries if entry.path != ""]  # throw out all parent folders (TODO might require makedirs())
 
@@ -218,7 +222,6 @@ def main():
     # TODO why exclude files in newdirs from being recognized as moved? must be complementary to the movedirs logic
 
     # Main logic: Detect files and relationships
-    def new(entry:FileState) -> Set[str]: return {e.path for e in addNames if entry.base is e.base}  # all entries not being the first one (which they shouldn't be anyway)
     addNames:List[FileState] = [f for f in entries if f.state == "store"]
     potentialMoves:Dict[str,Set[str]] = {old.path: new(old) for old in entries if old.type == "unknown" and old.state == "deleted"}  # what about modified?
     removes:Set[str] = {rem for rem, froms in potentialMoves.items() if not froms}  # exclude entries that have no origin
@@ -228,20 +231,20 @@ def main():
     modified = [name for name in modified if name not in added]
     potentialMoveDirs:Dict[str,str] = {}
     if not add and '--skip-move' not in sys.argv and '--skip-moves' not in sys.argv:
-      if verbose: print("Computing potential directory moves")  # HINT: a check if all removed files can be found in a new directory cannot be done, as we only that that a directory has been deleted, but nothing about its files
+      debug("Computing potential directory moves")  # HINT: a check if all removed files can be found in a new directory cannot be done, as we only that that a directory has been deleted, but nothing about its files
       potentialMoveDirs = {delname: ", ".join([f"{_[1]}:{_[0]}" for _ in sorted([(distance(os.path.basename(addname), os.path.basename(delname)), addname) for addname in newdirs.keys()]) if _[0] < MAX_EDIT_DISTANCE][:MAX_MOVE_DIRS]) for delname in potentialMoves.keys() | removes}
       potentialMoveDirs = {k: v for k, v in potentialMoveDirs.items() if v != ""}
 
     # User interaction
-    if len(added)             > 0: print("%-5s added files"   % len(added))
-    if len(modified)          > 0: print("%-5s chngd files"   % len(modified))
-    if len(removes)           > 0: print("%-5s remvd entries" % len(removes))
-    if len(potentialMoves)    > 0: print("%-5s moved files (maybe)" % len(potentialMoves))
-    if len(newdirs)           > 0: print("%-5s Added dirs (including %d files)" % (len(newdirs), sum([len(files) for files in newdirs.values()])))
-    if len(potentialMoveDirs) > 0: print("%-5s Moved dirs (maybe) " % len(potentialMoveDirs))
+    if len(added)             > 0: info("%-5s added files"   % len(added))
+    if len(modified)          > 0: info("%-5s chngd files"   % len(modified))
+    if len(removes)           > 0: info("%-5s remvd entries" % len(removes))
+    if len(potentialMoves)    > 0: info("%-5s moved files (maybe)" % len(potentialMoves))
+    if len(newdirs)           > 0: info("%-5s Added dirs (including %d files)" % (len(newdirs), sum([len(files) for files in newdirs.values()])))
+    if len(potentialMoveDirs) > 0: info("%-5s Moved dirs (maybe) " % len(potentialMoveDirs))
     if not (added or newdirs or modified or removes):
-      print("Nothing to do.")
-      if verbose: print("Finished after %.1f minutes." % ((time.time() - time_start) / 60.))
+      warn("Nothing to do.")
+      debug("Finished after %.1f minutes." % ((time.time() - time_start) / 60.))
       if not simulate and ask: input("Hit Enter to exit.")
       sys.exit(0)
     while ask:
@@ -251,13 +254,13 @@ def main():
         only (add), (sync), (update), (delete)/(remove)
         or continue to {'sync' if sync else ('add' if add else 'update')} via (y)
         exit via <Enter>, (q) or (x)\n  => """))
-      if   selection == "a": print("\n".join("  "   + add for add in added))
-      elif selection == "t": print("\n".join("  "   + add for add in sorted(added, key = lambda a: (a[a.rindex("."):] if "." in a else a) + a)))  # by file type
-      elif selection == "c": print("\n".join("  > " + mod for mod in sorted(modified)))
-      elif selection == "r": print("\n".join("  "   + rem for rem in sorted(removes)))
-      elif selection == "m": print("\n".join(f"  {_from} -> {_tos}" for _from, _tos in sorted(potentialMoves.items())))
-      elif selection == "M": print("\n".join(f"  {_from} -> {_tos}" for _from, _tos in sorted(potentialMoveDirs.items())))
-      elif selection == "A": print("\n".join(f"DIR {folder} ({len(files)} files)" + ("\n    " + "\n    ".join(files) if len(files) > 0 else "") for folder, files in sorted(newdirs.items())))
+      if   selection == "a": [info("  "   + add) for add in added]
+      elif selection == "t": [info("  "   + add for add in sorted(added, key=lambda a: (a[a.rindex("."):] if "." in a else a) + a))]  # by file type
+      elif selection == "c": [info("  > " + mod for mod in sorted(modified))]
+      elif selection == "r": [info("  "   + rem for rem in sorted(removes))]
+      elif selection == "m": [info(f"  {_from} -> {_tos}" for _from, _tos in sorted(potentialMoves.items()))]
+      elif selection == "M": [info(f"  {_from} -> {_tos}" for _from, _tos in sorted(potentialMoveDirs.items()))]
+      elif selection == "A": [info(f"DIR {folder} ({len(files)} files)" + ("\n    " + "\n    ".join(files) if len(files) > 0 else "") for folder, files in sorted(newdirs.items()))]
       elif selection == "y": force = True; break
       elif selection[:3] == "add":  add = True;  sync = False; delete = False; force = True; break  # TODO run simulation/estimation again before exectution
       elif selection[:4] == "sync": add = False; sync = True;  delete = False; force = True; break
@@ -267,15 +270,15 @@ def main():
       else: sys.exit(1)
 
     if len(removes) + len(potentialMoves) + len(potentialMoveDirs) > 0 and not force:
-      print("\nPotentially harmful changes detected. Use --force or -y to run rsync anyway.")
+      error("Potentially harmful changes detected. Use --force or -y to run rsync anyway.")
       sys.exit(1)
 
   if not simulate:  # quit without execution
     command = constructCommand(simulate=False)
-    if verbose: print(f"\nExecuting: {command}")
+    debug(f"\nExecuting: {command}")
     subprocess.Popen(command, shell=True, stdout=sys.stdout, stderr=sys.stderr).wait()
 
-  if verbose: print("Finished after %.1f minutes." % ((time.time() - time_start) / 60.))
+  debug("Finished after %.1f minutes." % ((time.time() - time_start) / 60.))
 
 
 if __name__ == '__main__': main()
