@@ -1,11 +1,9 @@
 # (C) 2017-2022 Arne Bachmann. All rights reserved
-# TODO add encoding header
-
-# TODO moved contains deleted - but uncertain?
-# TODO rsync wrapper script that supports humans in detecting dangerous changes to a folder structure synchronization.
+# TODO update: rsync wrapper script that supports humans in detecting dangerous changes to a folder structure synchronization.
 # The script highlights the main changes and detects potential unwanted file deletions, while hinting to moved files that might correspond to a folder rename or move.
 
-# TODO tests failing
+# TODO add encoding header
+# TODO moved contains deleted - but uncertain?
 # TODO copying .git folders (or any dot-folders?) changes the owner and access rights! This leads to problems on consecutive syncs
 
 from __future__ import annotations
