@@ -13,8 +13,12 @@ We recommend using `PyPy`, which appears to operate order(s) of magnitude faster
 pip install rsyncr
 ```
 
+This includes the following dependencies: `typing_extensions`, `textdistance`, but would also use any of `fuzzywuzzy`, `StringDist`, `brew-distance`, `edit-distance`, `editdistance-s` or `editdistance`.
+
+
 ## Usage
 
+Note: `rsyncr` runs best with pypy.
 `rsyncr` always operates on the *current folder*. You only specify the target folder (plus options).
 
 ```text
