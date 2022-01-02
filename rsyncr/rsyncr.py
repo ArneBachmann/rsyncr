@@ -1,10 +1,9 @@
-# (C) 2017-2022 Arne Bachmann. All rights reserved
-# TODO update: rsync wrapper script that supports humans in detecting dangerous changes to a folder structure synchronization.
-# The script highlights the main changes and detects potential unwanted file deletions, while hinting to moved files that might correspond to a folder rename or move.
+# coding=utf-8
 
-# TODO add encoding header
-# TODO moved contains deleted - but uncertain?
-# TODO copying .git folders (or any dot-folders?) changes the owner and access rights! This leads to problems on consecutive syncs
+# Copyright (C) 2017-2022 Arne Bachmann. All rights reserved
+# This rsync wrapper script supports humans in detecting dangerous changes to a file tree synchronization and allows some degree of interactive inspection.
+# TODO "moved" contains deleted - but uncertain?
+# TODO copying .git folders (or any dot-folders?) changes the owner and access rights! This leads to problems on consecutive syncs - add chmod? or use rsync option?
 
 from __future__ import annotations
 import time; time_start:float = time.time()
@@ -12,7 +11,7 @@ import functools, logging, os, subprocess, sys, textwrap
 assert sys.version_info >= (3, 7)  # version 3.6 was required in 2017 to ensure maximum roundtrip chances, but is end of live already in 2022
 from typing import cast, Any, Callable, Dict, Iterable, List, NamedTuple, Optional, Set, Tuple, TypeVar
 from typing_extensions import Final; T = TypeVar('T')
-from .distance import cygwinify, distance
+from .distance import cygwinify, distance as measure
 from .help import help
 
 
@@ -31,8 +30,8 @@ checksum = '--checksum'   in sys.argv or '-C' in sys.argv
 backup   = '--backup'     in sys.argv
 override = '--force-copy' in sys.argv
 estimate = '--estimate'   in sys.argv
-force_foldername = '--force-foldername' in sys.argv or '-f' in sys.argv
-cwdParent = file = rsyncPath = source = target = ""
+force_dir= '--force-dir'  in sys.argv or '-f' in sys.argv
+cwdParent= file = rsyncPath = source = target = ""
 protocol = 0; rversion = (0, 0)
 
 logging.basicConfig(level=logging.DEBUG if verbose else logging.INFO, stream=sys.stderr, format="%(message)s")
@@ -46,11 +45,13 @@ MEBI:int          = 1024 << 10
 QUOTE:str = '"' if sys.platform == "win32" else ""
 FEXCLUDE:List[str] = ['*~~'] + ([".corruptdetect"] if '--with-checksums' not in sys.argv else [])  # ~~to avoid further copying of previous backups
 DEXCLUDE:List[str] = ['.redundir', '.imagesubsort_cache', '.imagesubsort_trash', '$RECYCLE.BIN', 'System Volume Information', 'Recovery', 'catalog Previews.lrdata']
+DELS:Set[str] = {"del", "rem"}
 
-# Utility functions TODO benchmark this
+
+# Utility functions  TODO benchmark these
 def xany(pred:Callable[[Any], bool], lizt:Iterable[Any]) -> bool: return functools.reduce(lambda a, b: a or  pred(b), lizt if hasattr(lizt, '__iter__') else list(lizt), False)
 def xall(pred:Callable[[Any], bool], lizt:Iterable[Any]) -> bool: return functools.reduce(lambda a, b: a and pred(b), lizt if hasattr(lizt, '__iter__') else list(lizt), True)
-def intern(d:Dict[str,T]) -> Dict[str,T]: return {sys.intern(k): sys.intern(v) if isinstance(v, str) else v for k, v in d.items()}
+def intern(d:Dict[str,T]) -> Dict[str,T]: return {sys.intern(k): cast(T, sys.intern(v) if isinstance(v, str) else v) for k, v in d.items()}
 
 
 # Rsync output classification
@@ -60,11 +61,8 @@ Change:Final[Dict[str,bool]] = {".": False, "+": True, "s": True, "t": True}  # 
 FileState:NamedTuple = NamedTuple("FileState", [("state", str), ("type", str), ("change", bool), ("path", str), ("newdir", bool), ("base", str)])  # 9 characters and one space before relative path
 
 
-def new(entry:FileState) -> Set[str]: return {e.path for e in addNames if entry.base is e.base}  # all entries not being the first one (which they shouldn't be anyway)
-
-
-def parseLine(line:str) -> FileState:
-  ''' Parse one rsync item.
+def parseLine(line:str) -> Optional[FileState]:
+  ''' Parse one rsync item from the simulation run output.
 
   Must be called from the checkout folder.
   >>> print(parseLine("cd+++++++++ 05 - Bulgarien/07"))
@@ -74,11 +72,12 @@ def parseLine(line:str) -> FileState:
   >>> print(parseLine(">f+++++++++ 05 - Bulgarien/07/IMG_0682.JPG"))
   FileState(state='store', type='file', change=False, path='/rsyncr/05 - Bulgarien/07/IMG_0682.JPG', newdir=False, base='IMG_0682.JPG')
   '''
+  if line.startswith('cannot delete non-empty directory'): warn(f'Folder remains: {line.split(":")[1]}'); return None  # this happens if a protected folder remains e.g. from DEXCLUDE
   atts:str  = line.split(" ")[0]  # until space between itemization info and path
   path:str  = line[line.index(" ") + 1:].lstrip(" ")
   state:str = State.get(atts[0], "")  # *deleting
   if state != "message":
-    entry:str = Entry.get(atts[1], ""); assert entry  # f:file, d:dir
+    entry:str = Entry.get(atts[1], ""); assert entry, f"{line=} {atts=} {path=} {state=}"  # f:file, d:dir
     change:bool = xany(lambda _: _ in "cstpoguax", atts[2:])  # check attributes for any change
   else:
     entry = Entry["u"]  # unknown type
@@ -160,24 +159,24 @@ def main():
     else: drivepath = sys.argv[1]
     if drivepath.rstrip("/\\").endswith(f"{os.sep}~") and sys.platform == "win32":
       drivepath = drivepath[0] + os.getcwd()[1:]  # common = os.path.commonpath(("A%s" % os.getcwd()[1:], "A%s" % drivepath[1:]))
-    if drivepath != '--test' and not os.path.exists(drivepath): raise Exception(f"Target folder '{drivepath}' doesn't exist. Create it manually to sync. This avoids bad surprises!")
+    if drivepath != '--test' and not os.path.exists(drivepath): raise Exception(f"Target dir '{drivepath}' doesn't exist. Create it manually to sync. This avoids bad surprises!")
     target = cygwinify(os.path.abspath(drivepath))
 
   # Preprocess source and target folders
   rsyncPath = os.getenv("RSYNC", "rsync")  # allows definition of custom executable
   cwdParent = cygwinify(os.path.dirname(os.getcwd()))  # because current directory's name may not exist in target, we need to track its contents as its own folder
   if '--test' in sys.argv:
-    import doctest; from . import distance
-    sys.exit(doctest.testmod()[0] or doctest.testmod(distance)[0])
+    import doctest; from . import distance, rsyncr
+    sys.exit(doctest.testmod(rsyncr)[0] or doctest.testmod(distance)[0])
   if target[-1] != "/": target += "/"
   source = cygwinify(os.getcwd()); source += "/"
   if not remote:
     diff = os.path.relpath(target, source)
     if diff != "" and not diff.startswith(".."):
-      raise Exception(f"Cannot copy to parent folder of source! Relative path: .{os.sep}{diff}")
-  if not force_foldername and os.path.basename(source[:-1]).lower() != os.path.basename(target[:-1]).lower():
-    raise Exception(f"Are you sure you want to synchronize from '{source}' to '{target}' using different folder names? Use --force-foldername or -f if yes")  # TODO E: to F: shows also warning
-  if file: source += file  # combine source folder (with trailing slash) with file name
+      raise Exception(f"Cannot copy to parent dir of source! Relative path: .{os.sep}{diff}")
+  if not force_dir and os.path.basename(source[:-1]).lower() != os.path.basename(target[:-1]).lower():
+    raise Exception(f"Are you sure you want to synchronize from '{source}' to '{target}' using different directory names? Use --force-dir or -f if yes")  # TODO E: to F: shows also warning
+  if file: source += file  # combine source directory (with trailing slash) with file name
   if verbose:
     info(f"Operation: {'SIMULATE ' if simulate else ''}" + ("ADD" if add else ("UPDATE" if not sync else ("SYNC" if not override else "COPY"))))
     info(f"Source: {source}")
@@ -210,9 +209,9 @@ def main():
   if not file and (simulate or not add):  # only simulate in multi-file mode. in add-only mode we need not check for conflicts
     command = constructCommand(simulate=True)
     debug(f"\nSimulating: {command}")
-    lines = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=sys.stderr).communicate()[0].decode(sys.stdout.encoding).replace("\r\n", "\n").split("\n")  # TODO allow different encodings per line? code was removed TODO also parse line-wise instead of slurp
-    entries:List[FileState] = [parseLine(line) for line in lines if line != ""]  # parse itemized information
-    entries[:] = [entry for entry in entries if entry.path != ""]  # throw out all parent folders (TODO might require makedirs())
+    lines = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=sys.stderr).communicate()[0].decode(sys.stdout.encoding).replace("\r\n", "\n").split("\n")  # TODO also parse line-wise instead of slurp
+    entrie_:List[Optional[FileState]] = [parseLine(line) for line in lines if line.strip()]  # parse itemized information
+    entries:List[FileState] = [entry for entry in entrie_ if entry and entry.path]  # filter errors,throw out all parent dirs (TODO might require makedirs())
 
     # Detect files belonging to newly create directories - can be ignored regarding removal or moving
     newdirs:Dict[str,List[str]] = {entry.path: [e.path for e in entries if e.path.startswith(entry.path) and e.type == "file"] for entry in entries if entry.newdir}  # associate dirs with contained files
@@ -220,6 +219,8 @@ def main():
     # TODO why exclude files in newdirs from being recognized as moved? must be complementary to the movedirs logic
 
     # Main logic: Detect files and relationships
+    def new(entry:FileState) -> Set[str]: return {e.path for e in addNames if entry.base is e.base}  # all entries not being the first one (which they shouldn't be anyway)
+
     addNames:List[FileState] = [f for f in entries if f.state == "store"]
     potentialMoves:Dict[str,Set[str]] = {old.path: new(old) for old in entries if old.type == "unknown" and old.state == "deleted"}  # what about modified?
     removes:Set[str] = {rem for rem, froms in potentialMoves.items() if not froms}  # exclude entries that have no origin
@@ -230,16 +231,16 @@ def main():
     potentialMoveDirs:Dict[str,str] = {}
     if not add and '--skip-move' not in sys.argv and '--skip-moves' not in sys.argv:
       debug("Computing potential directory moves")  # HINT: a check if all removed files can be found in a new directory cannot be done, as we only that that a directory has been deleted, but nothing about its files
-      potentialMoveDirs = {delname: ", ".join([f"{_[1]}:{_[0]}" for _ in sorted([(distance(os.path.basename(addname), os.path.basename(delname)), addname) for addname in newdirs.keys()]) if _[0] < MAX_EDIT_DISTANCE][:MAX_MOVE_DIRS]) for delname in potentialMoves.keys() | removes}
+      potentialMoveDirs = {delname: ", ".join([f"{_[1]}:{_[0]}" for _ in sorted([(measure(os.path.basename(addname), os.path.basename(delname)), addname) for addname in newdirs.keys()]) if _[0] < MAX_EDIT_DISTANCE][:MAX_MOVE_DIRS]) for delname in potentialMoves.keys() | removes}
       potentialMoveDirs = {k: v for k, v in potentialMoveDirs.items() if v != ""}
 
     # User interaction
-    if len(added)             > 0: info("%-5s added files"   % len(added))
-    if len(modified)          > 0: info("%-5s chngd files"   % len(modified))
-    if len(removes)           > 0: info("%-5s remvd entries" % len(removes))
-    if len(potentialMoves)    > 0: info("%-5s moved files (maybe)" % len(potentialMoves))
-    if len(newdirs)           > 0: info("%-5s Added dirs (including %d files)" % (len(newdirs), sum([len(files) for files in newdirs.values()])))
-    if len(potentialMoveDirs) > 0: info("%-5s Moved dirs (maybe) " % len(potentialMoveDirs))
+    info("%-5s added files"   % (len(added) if added else "no"))
+    info("%-5s chngd files"   % (len(modified) if modified else "no"))
+    info("%-5s remvd entries" % (len(removes) if removes else "no"))
+    info("%-5s moved files (maybe)" % (len(potentialMoves) if potentialMoves else "no"))
+    info("%-5s Added dirs (including %d files)" % ((len(newdirs), sum([len(files) for files in newdirs.values()])) if newdirs else ("no", 0)))
+    info("%-5s Moved dirs (maybe) " % (len(potentialMoveDirs) if potentialMoveDirs else "no"))
     if not (added or newdirs or modified or removes):
       warn("Nothing to do.")
       debug("Finished after %.1f minutes." % ((time.time() - time_start) / 60.))
@@ -248,23 +249,22 @@ def main():
     while ask:
       selection = input(textwrap.dedent(f"""Options:
         show (a)dded ({len(added)}), (c)hanged ({len(modified)}), (r)emoved ({len(removes)}), (m)oved files ({len(potentialMoves)})
-        show (A)dded ({len(newdirs)}:{sum(len(_) for _ in newdirs.values())}), (M)oved ({len(potentialMoveDirs)}) folders:files
+        show (A)dded ({len(newdirs)}:{sum(len(_) for _ in newdirs.values())}), (M)oved ({len(potentialMoveDirs)}) dirs:files
         only (add), (sync), (update), (delete)/(remove)
         or continue to {'sync' if sync else ('add' if add else 'update')} via (y)
         exit via <Enter>, (q) or (x)\n  => """))
-      if   selection == "a": [info("  "   + add) for add in added]
-      elif selection == "t": [info("  "   + add for add in sorted(added, key=lambda a: (a[a.rindex("."):] if "." in a else a) + a))]  # by file type
-      elif selection == "c": [info("  > " + mod for mod in sorted(modified))]
-      elif selection == "r": [info("  "   + rem for rem in sorted(removes))]
-      elif selection == "m": [info(f"  {_from} -> {_tos}" for _from, _tos in sorted(potentialMoves.items()))]
-      elif selection == "M": [info(f"  {_from} -> {_tos}" for _from, _tos in sorted(potentialMoveDirs.items()))]
-      elif selection == "A": [info(f"DIR {folder} ({len(files)} files)" + ("\n    " + "\n    ".join(files) if len(files) > 0 else "") for folder, files in sorted(newdirs.items()))]
-      elif selection == "y": force = True; break
+      if   selection == "a": [info(f"  {add}") for add in added]
+      elif selection == "t": [info(f"  {add}") for add in sorted(added, key=lambda a: (a[a.rindex("."):] if "." in a else a) + a)]  # by file type
+      elif selection == "r": [info(f"  {rem}")   for rem in sorted(removes)]
+      elif selection == "m": [info(f"  {_from} -> {_tos}") for _from, _tos in sorted(potentialMoves.items())]
+      elif selection == "M": [info(f"  {_from} -> {_tos}") for _from, _tos in sorted(potentialMoveDirs.items())]
+      elif selection == "c": [info(f"  > {mod}") for mod in sorted(modified)]
+      elif selection == "A": [info(f"DIR {folder} ({len(files)} files)" + ("\n    " + "\n    ".join(files) if len(files) > 0 else "")) for folder, files in sorted(newdirs.items())]
+      elif selection == "y": force = True; break  # continue with specified settings
       elif selection[:3] == "add":  add = True;  sync = False; delete = False; force = True; break  # TODO run simulation/estimation again before exectution
       elif selection[:4] == "sync": add = False; sync = True;  delete = False; force = True; break
       elif selection[:2] == "up":   add = False; sync = False; delete = False; force = True; break
-      elif selection[:3] in ("del", "rem"):
-                                    add = False; sync = False; delete = True;  force = True; break
+      elif selection[:3] in DELS:   add = False; sync = False; delete = True;  force = True; break
       else: sys.exit(1)
 
     if len(removes) + len(potentialMoves) + len(potentialMoveDirs) > 0 and not force:

@@ -1,7 +1,9 @@
+# coding=utf-8
+
 import sys
 
 
-def help():
+def help() -> None:
   print(r"""rsyncr  (C) Arne Bachmann 2017-2022
     This rsync-wrapper simplifies backing up the current directory tree.
 
@@ -23,7 +25,7 @@ def help():
 
     Interactive options:
       --ask                -i  In case of dangerous operation, ask user interactively
-      --force-foldername   -f  Sync even if target folder name differs
+      --force-dir          -f  Sync even if target folder name differs
       --force              -y  Sync even if deletions or moved files have been detected
       --force-copy             Force writing over existing files
 

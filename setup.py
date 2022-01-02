@@ -20,7 +20,7 @@ setup(
   version=versionString,  # without extra
   description="rsyncr - An enhanced rsync backup wrapper script",
   long_description="",  # TODO
-  install_requires=["textdistance >= 3"],  # "fuzzywuzzy[speedup"],  # actually optional dependencies
+  install_requires=["stringdist"],  # "fuzzywuzzy[speedup"],  # actually optional dependencies
   classifiers=[c.strip() for c in """
         Development Status :: 5 - Production/Stable
         Intended Audience :: Science/Research
