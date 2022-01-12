@@ -37,5 +37,5 @@ def help() -> None:
       --help       -h  Show this information
 
     Special options:
-      --with-checksums  corrupDetect compatibility: if set, .corrupdetect files are not ignored
+      --with-checksums  corrupDetect compatibility: if set, .corrupdetect files are *not* ignored
   """); sys.exit(0)

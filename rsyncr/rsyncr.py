@@ -43,7 +43,7 @@ MAX_MOVE_DIRS:int = 2  # don't display more than this number of potential direct
 MAX_EDIT_DISTANCE = 5  # insertions/deletions/replacements (and also moves for damerau-levenshtein)
 MEBI:int          = 1024 << 10
 QUOTE:str = '"' if sys.platform == "win32" else ""
-FEXCLUDE:List[str] = ['*~~'] + ([".corruptdetect"] if '--with-checksums' not in sys.argv else [])  # ~~to avoid further copying of previous backups
+FEXCLUDE:List[str] = ['*~~'] + (['.corrupdetect'] if '--with-checksums' not in sys.argv else [])  # ~~to avoid further copying of previous backups
 DEXCLUDE:List[str] = ['.redundir', '.imagesubsort_cache', '.imagesubsort_trash', '$RECYCLE.BIN', 'System Volume Information', 'Recovery', 'catalog Previews.lrdata']
 DELS:Set[str] = {"del", "rem"}
 
