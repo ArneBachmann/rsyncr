@@ -1,7 +1,7 @@
 # TODO add encoding, copyright, cleanup versions, add types...
 
-import os, sys, time
-from setuptools import setup, find_packages
+import os, time
+from setuptools import setup
 
 lt = time.localtime()
 version = (lt.tm_year, (10 + lt.tm_mon) * 100 + lt.tm_mday, (10 + lt.tm_hour) * 100 + lt.tm_min)
@@ -20,7 +20,7 @@ setup(
   version=versionString,  # without extra
   description="rsyncr - An enhanced rsync backup wrapper script",
   long_description="",  # TODO
-  install_requires=["stringdist"],  # "fuzzywuzzy[speedup"],  # actually optional dependencies
+  install_requires=["stringdist", "typing_extensions"],  # "fuzzywuzzy[speedup"],  # actually optional dependencies
   classifiers=[c.strip() for c in """
         Development Status :: 5 - Production/Stable
         Intended Audience :: Science/Research
@@ -46,5 +46,5 @@ setup(
 #  package_data={"": ["check.py", "run.py"]},
   include_package_data=False,  # if True, will *NOT* package the data!
   zip_safe=False,
-  entry_points={ 'console_scripts': [ 'rsyncr=rsyncr.rsyncr:main' ] },
+  entry_points={'console_scripts': ['rsyncr=rsyncr.rsyncr:main']},
 )

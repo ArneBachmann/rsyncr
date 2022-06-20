@@ -2,10 +2,11 @@
 
 ![GPLv3 logo](http://www.gnu.org/graphics/gplv3-127x51.png)
 
-Awesome useful `rsync` convenience wrapper for Python 2.
+Awesome useful `rsync` convenience wrapper for Python 3.
 Does the heavy lifting of finding potential problems, plus detects potential moves.
 
 We recommend using `PyPy`, which appears to operate order(s) of magnitude faster during the (inefficient) file tree computations.
+
 
 ## Installation
 
@@ -13,13 +14,13 @@ We recommend using `PyPy`, which appears to operate order(s) of magnitude faster
 pip install rsyncr
 ```
 
-This includes the following dependencies: `typing_extensions`, `textdistance`, but would also use any of `fuzzywuzzy`, `StringDist`, `brew-distance`, `edit-distance`, `editdistance-s` or `editdistance`.
+This includes the following dependencies: `typing_extensions`, `textdistance`, but would also make use of `fuzzywuzzy`, `StringDist`, `brew-distance`, `edit-distance`, `editdistance-s` or `editdistance` if installed.
 
 
 ## Usage
 
-Note: `rsyncr` runs best with pypy.
-`rsyncr` always operates on the *current folder*. You only specify the target folder (plus options).
+`rsyncr` always operates on the *current folder*.
+You only specify the target folder (plus options).
 
 ```text
 rsyncr <target-path> [options]

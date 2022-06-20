@@ -2,7 +2,6 @@
 
 import logging, sys
 from typing import List
-from typing_extensions import Final
 
 _log = logging.getLogger(); debug, info, warn, error = _log.debug, _log.info, _log.warning, _log.error
 

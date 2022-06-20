@@ -182,7 +182,6 @@ def main():
     info(f"Source: {source}")
     info(f"Target: {target}")
 
-
   # Determine total file size
   output:str = subprocess.Popen(f"{QUOTE}{rsyncPath}{QUOTE} --version", shell=True, stdout=subprocess.PIPE, stderr=sys.stderr).communicate()[0].decode(sys.stdout.encoding).replace("\r\n", "\n").split("\n")[0]
   protocol = int(output.split("protocol version ")[1])
