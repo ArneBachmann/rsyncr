@@ -255,7 +255,7 @@ def main():
       if   selection == "a": [info(f"  {add}") for add in added]
       elif selection == "t": [info(f"  {add}") for add in sorted(added, key=lambda a: (a[a.rindex("."):] if "." in a else a) + a)]  # by file type
       elif selection == "r": [info(f"  {rem}")   for rem in sorted(removes)]
-      elif selection == "m": [info(f"  {_from} -> {_tos}") for _from, _tos in sorted(potentialMoves.items())]
+      elif selection == "m": [info(f"  {_from} -> {_tos}") for _from, _tos in sorted(potentialMoves.items())]  # TODO only show filename if different from source
       elif selection == "M": [info(f"  {_from} -> {_tos}") for _from, _tos in sorted(potentialMoveDirs.items())]
       elif selection == "c": [info(f"  > {mod}") for mod in sorted(modified)]
       elif selection == "A": [info(f"DIR {folder} ({len(files)} files)" + ("\n    " + "\n    ".join(files) if len(files) > 0 else "")) for folder, files in sorted(newdirs.items())]
