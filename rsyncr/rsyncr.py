@@ -2,6 +2,7 @@
 
 # Copyright (C) 2017-2022 Arne Bachmann. All rights reserved
 # This rsync wrapper script supports humans in detecting dangerous changes to a file tree synchronization and allows some degree of interactive inspection.
+# TODO don't apply compress or checksum when simulating (checksum is slow)
 # TODO "moved" contains deleted - but uncertain?
 # TODO copying .git folders (or any dot-folders?) changes the owner and access rights! This leads to problems on consecutive syncs - add chmod? or use rsync option?
 
@@ -72,7 +73,8 @@ def parseLine(line:str) -> Optional[FileState]:
   >>> print(parseLine(">f+++++++++ 05 - Bulgarien/07/IMG_0682.JPG"))
   FileState(state='store', type='file', change=False, path='/rsyncr/05 - Bulgarien/07/IMG_0682.JPG', newdir=False, base='IMG_0682.JPG')
   '''
-  if line.startswith('cannot delete non-empty directory'): warn(f'Folder remains: {line.split(":")[1]}'); return None  # this happens if a protected folder remains e.g. from DEXCLUDE
+  if line.startswith('cannot delete non-empty directory'): warn(f'Folder remains (probably excluded): {line.split(":")[1]}'); return None  # this happens if a protected folder remains e.g. from DEXCLUDE
+  if 'IO error' in line: print(line); return None  # error encountered -- skipping file deletion (during simulation!)
   atts:str  = line.split(" ")[0]  # until space between itemization info and path
   path:str  = line[line.index(" ") + 1:].lstrip(" ")
   state:str = State.get(atts[0], "")  # *deleting
