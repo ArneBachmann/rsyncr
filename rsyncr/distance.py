@@ -1,6 +1,6 @@
 # coding=utf-8
 
-# TODO add automatic benchmark via timeit for all available libraries and store fastest one
+# TODO add automatic benchmark via timeit for all available libraries and persist fastest one
 
 import logging, sys
 from typing import List

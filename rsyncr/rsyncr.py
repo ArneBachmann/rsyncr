@@ -2,7 +2,6 @@
 
 # Copyright (C) 2017-2022 Arne Bachmann. All rights reserved
 # This rsync wrapper script supports humans in detecting dangerous changes to a file tree synchronization and allows some degree of interactive inspection.
-# TODO don't apply compress or checksum when simulating (checksum is slow)
 # TODO "moved" contains deleted - but uncertain?
 # TODO copying .git folders (or any dot-folders?) changes the owner and access rights! This leads to problems on consecutive syncs - add chmod? or use rsync option?
 
@@ -110,7 +109,7 @@ def constructCommand(simulate:bool) -> str:  # TODO -m prune empty dir chains fr
       rec="-r " if not flat and not file else "",  # TODO allow flat with --delete
       addmode="--ignore-existing " if add else ("--existing " if delete else ("-I " if override else "-u ")),  # --ignore-existing only copy additional files (vs. --existing: don't add new files) -u only copy if younger -I ignore times
       delmode="--delete-after --prune-empty-dirs --delete-excluded " if sync or delete else "",
-      comp="-S -z --compress-level=6 " if compress else "",
+      comp="-S -z --compress-level=6 " if compress and not simulate else "",
       part="-P " if file else "",  # -P = --partial --progress
       bacmode=("-b --suffix='~~' " if backup else ""),
       units=("" if simulate else "-hh --stats "),  # using SI-units
