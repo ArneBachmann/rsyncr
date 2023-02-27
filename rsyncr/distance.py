@@ -2,7 +2,7 @@
 # TODO there is the difflib.get_close_matches() function in the stdlib
 
 import contextlib, itertools, logging, sys, time
-from beartype.typing import cast, Dict, Generator, List, Protocol, Set
+from beartype.typing import cast, Dict, Generator, Iterator, List, Protocol, Set
 
 _log = logging.getLogger(); debug, info, warn, error = _log.debug, _log.info, _log.warning, _log.error
 
@@ -62,11 +62,11 @@ def probe(name) -> Generator[str|None,DistanceMeasure,None]:
   func.__name__ = name
   FUNCS.add(func)
   debug(f"Loaded {name}")
-  yield
+  yield None
 
 
 @contextlib.contextmanager
-def probe_library(name:str) -> Generator[str|None,DistanceMeasure,None]:
+def probe_library(name:str) -> Iterator[Generator[str|None,DistanceMeasure,None]]:
   try:
     it = iter(probe(name))
     for i, step in enumerate(it):  # yield None
@@ -79,8 +79,8 @@ _distance:DistanceMeasure
 with probe_library("fuzzywuzzy") as libs:
   from fuzzywuzzy import fuzz as _fuzz  # type: ignore
   _distance = lambda a, b: (100 - _fuzz.ratio(a, b)) / 20  # noqa: E731  # similarity score 0..100
-  assert _distance("abc", "abe") == 1.65
-  assert _distance("abc", "cbe") == 3.35
+  assert _distance("abc", "abe") == 1.65  # type: ignore  # error: <nothing> not callable  [misc]
+  assert _distance("abc", "cbe") == 3.35  # type: ignore
   libs.send(_distance)
 
 # with contextlib.suppress(ImportError, AssertionError):
@@ -101,14 +101,14 @@ with probe_library("StringDist") as libs:
 with probe_library("brew_distance") as libs:
   from brew_distance import distance as _distance01  # type: ignore
   _distance = lambda a, b: _distance01(a, b)[0]  # [1] contains operations  # type: ignore
-  assert _distance("abc", "cbe") == 2  # until bug has been fixed
+  assert _distance("abc", "cbe") == 2  # type: ignore  # until bug has been fixed
   libs.send(_distance)
 
 # https://github.com/belambert/edit-distance  slow implementation
 with probe_library("edit_distance") as libs:
   from edit_distance import SequenceMatcher as _distance1  # type: ignore
   _distance = lambda a, b: _distance1(a, b).distance()  # noqa: E731
-  assert _distance("abc", "cbe") == 2
+  assert _distance("abc", "cbe") == 2  # type: ignore
   libs.send(_distance1)
 
 # https://github.com/asottile/editdistance-s
