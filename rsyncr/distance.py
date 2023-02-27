@@ -1,11 +1,19 @@
-# coding=utf-8
+# Copyright (C) 2017-2023 Arne Bachmann. All rights reserved
+# TODO there is the difflib.get_close_matches() function in the stdlib
 
-# TODO add automatic benchmark via timeit for all available libraries and persist fastest one
-
-import logging, sys
-from typing import List
+import contextlib, itertools, logging, sys, time
+from beartype.typing import cast, Dict, Generator, List, Protocol, Set
 
 _log = logging.getLogger(); debug, info, warn, error = _log.debug, _log.info, _log.warning, _log.error
+
+
+class DistanceMeasure(Protocol):
+  # returns a positive, non-normalized integer used for ordering - but corresponds with MAX_EDIT_DISTANCE
+  __name__: str
+  def __call__(_, a:str, b:str) -> int|float: ...
+
+
+FUNCS:Set[DistanceMeasure] = set()
 
 
 # Conditional function definition for cygwin under Windows
@@ -29,48 +37,99 @@ else:
   def cygwinify(path:str) -> str: return path.rstrip('/')
 
 
-# distance() returns a positive, non-normalized integer used for ordering - but corresponds with MAX_EDIT_DISTANCE
-try:  # https://github.com/seatgeek/fuzzywuzzy (+ https://github.com/ztane/python-Levenshtein/) TODO avoid this try chain if --no-move
-  from fuzzywuzzy import fuzz  # type: ignore
-  def distance(a, b) -> float: return (100 - fuzz.ratio(a, b)) / 20  # similarity score 0..100
-  assert distance("abc", "abe") == 1.65; assert distance("abc", "cbe") == 3.35
-  debug("Using fuzzywuzzy library")
-except:
-#  try:
-#    from textdistance import DamerauLevenshtein  # type: ignore
-#    def distance(a, b) -> float: return DamerauLevenshtein.normalized_distance(a, b)  # type: ignore  # h = hamming, l = levenshtein, dl = damerau-levenshtein
-#    from textdistance import distance as _distance  # type: ignore  # https://github.com/orsinium/textdistance, now for Python 2 as well
-#    def distance(a, b) -> float: return _distance('l', a, b)  # type: ignore  # h = hamming, l = levenshtein, dl = damerau-levenshtein
-#    assert distance("abc", "cbe") == 2  # until bug has been fixed
-#    debug("Using textdistance library")
-#  except:
-    try:
-      from stringdist import levenshtein as distance  # type: ignore  # https://pypi.python.org/pypi/StringDist/1.0.9
-      assert distance("abc", "cbe") == 2
-      debug("Using StringDist library")
-    except:
-      try:
-        from brew_distance import distance as _distance  # type: ignore  # https://github.com/dhgutteridge/brew-distance  slow implementation
-        def distance(a, b) -> float: return _distance(a, b)[0]  # [1] contains operations  # type: ignore
-        assert distance("abc", "cbe") == 2  # until bug has been fixed
-        debug("Using brew_distance library")
-      except:
-        try:
-          from edit_distance import SequenceMatcher as _distance  # type: ignore  # https://github.com/belambert/edit-distance  slow implementation
-          def distance(a, b) -> float: return _distance(a, b).distance()
-          assert distance("abc", "cbe") == 2
-          debug("Using edit_distance library")
-        except:
-          try:
-            from editdistance_s import distance  # type: ignore  # https://github.com/asottile/editdistance-s
-            assert distance("abc", "cbe") == 2
-            debug("Using editdistance_s library")
-          except:
-            try:  # https://github.com/asottile/editdistance-s
-              from editdistance import eval as distance  # type: ignore  # https://pypi.python.org/pypi/editdistance/0.2
-              assert distance("abc", "cbe") == 2
-              debug("Using editdistance library")
-            except:
-              def distance(a, b) -> float: return 0. if a == b else 1.  # simple distance measure fallback
-              assert distance("abc", "cbe") == 1
-              debug("Using simple comparison")
+def run_tests(func:DistanceMeasure) -> float:
+  ''' Measure speed of the distance function. '''
+  debug(f"Benchmark {func.__name__}")
+  start:float = time.time()
+  for i in range(1):
+    for a, b, c, d in itertools.product(range(ord('A'), ord('D') + 1), range(ord('A'), ord('D') + 1), range(ord('A'), ord('D') + 1), range(ord('A'), ord('D') + 1)):
+      for e, f, g, h in itertools.product(range(ord('A'), ord('D') + 1), range(ord('A'), ord('D') + 1), range(ord('A'), ord('D') + 1), range(ord('A'), ord('D') + 1)):
+        x:str = chr(a) + chr(b) + chr(c) + chr(d)
+        y:str = chr(e) + chr(f) + chr(g) + chr(h)
+        func(x, y)
+  return time.time() - start
+
+
+def benchmark(funcs:Set[DistanceMeasure]) -> DistanceMeasure:
+  ''' Automatic determination of fastest distance measure. TODO: persist setting '''
+  results:Dict[DistanceMeasure,float] = {func: run_tests(func) for func in funcs}
+  return min([(duration, func) for func, duration in results.items()])[1]
+
+
+def probe(name) -> Generator[str|None,DistanceMeasure,None]:
+  debug(f"Probe {name}")
+  func:DistanceMeasure = yield name
+  func.__name__ = name
+  FUNCS.add(func)
+  debug(f"Loaded {name}")
+  yield
+
+
+@contextlib.contextmanager
+def probe_library(name:str) -> Generator[str|None,DistanceMeasure,None]:
+  try:
+    it = iter(probe(name))
+    for i, step in enumerate(it):  # yield None
+      if step: yield it  # ignore yield None
+  except (ImportError, AssertionError) as e: warn(e)
+
+
+_distance:DistanceMeasure
+# https://github.com/seatgeek/fuzzywuzzy (+ https://github.com/ztane/python-Levenshtein/) TODO avoid this try chain if --no-move
+with probe_library("fuzzywuzzy") as libs:
+  from fuzzywuzzy import fuzz as _fuzz  # type: ignore
+  _distance = lambda a, b: (100 - _fuzz.ratio(a, b)) / 20  # noqa: E731  # similarity score 0..100
+  assert _distance("abc", "abe") == 1.65
+  assert _distance("abc", "cbe") == 3.35
+  libs.send(_distance)
+
+# with contextlib.suppress(ImportError, AssertionError):
+#   from textdistance import DamerauLevenshtein  # type: ignore
+#   def _distance(a, b) -> float: return DamerauLevenshtein.normalized_distance(a, b)  # type: ignore  # h = hamming, l = levenshtein, dl = damerau-levenshtein
+#   from textdistance import distance as _distance  # type: ignore  # https://github.com/orsinium/textdistance, now for Python 2 as well
+#   def _distance(a, b) -> float: return _distance('l', a, b)  # type: ignore  # h = hamming, l = levenshtein, dl = damerau-levenshtein
+#   assert _distance("abc", "cbe") == 2  # until bug has been fixed
+#   debug("Using textdistance library")
+
+# https://pypi.python.org/pypi/StringDist/1.0.9
+with probe_library("StringDist") as libs:
+  from stringdist import levenshtein as _distance0  # type: ignore
+  assert _distance0("abc", "cbe") == 2
+  libs.send(_distance0)
+
+# https://github.com/dhgutteridge/brew-distance  slow implementation
+with probe_library("brew_distance") as libs:
+  from brew_distance import distance as _distance01  # type: ignore
+  _distance = lambda a, b: _distance01(a, b)[0]  # [1] contains operations  # type: ignore
+  assert _distance("abc", "cbe") == 2  # until bug has been fixed
+  libs.send(_distance)
+
+# https://github.com/belambert/edit-distance  slow implementation
+with probe_library("edit_distance") as libs:
+  from edit_distance import SequenceMatcher as _distance1  # type: ignore
+  _distance = lambda a, b: _distance1(a, b).distance()  # noqa: E731
+  assert _distance("abc", "cbe") == 2
+  libs.send(_distance1)
+
+# https://github.com/asottile/editdistance-s
+with probe_library("editdistance_s") as libs:
+  from editdistance_s import distance as _distance2  # type: ignore
+  assert _distance2("abc", "cbe") == 2
+  libs.send(_distance2)
+
+# https://github.com/asottile/editdistance-s
+# https://pypi.python.org/pypi/editdistance/0.2
+with probe_library("editdistance") as libs:
+  from editdistance import eval as _distance3  # type: ignore
+  assert _distance3("abc", "cbe") == 2
+  libs.send(_distance3)
+
+if FUNCS:
+  distance:DistanceMeasure = benchmark(FUNCS)
+  info(f"Use {distance.__name__} library")
+else:
+  # simple distance measure fallback
+  distance = cast(DistanceMeasure, lambda a, b: 0. if a == b else 1.)
+  assert distance("abc", "cbe") == 1
+  distance.__name__ = "simple comparison"
+  warn("Fall back to simple comparison")

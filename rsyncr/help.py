@@ -1,10 +1,10 @@
-# coding=utf-8
+# Copyright (C) 2017-2023 Arne Bachmann. All rights reserved
 
 import sys
 
 
-def help() -> None:
-  print(r"""rsyncr  (C) Arne Bachmann 2017-2022
+def help_output() -> None:
+  print(r"""rsyncr  (C) Arne Bachmann 2017-2023
     This rsync-wrapper simplifies backing up the current directory tree.
 
     Syntax:  rsyncr <target-path> [options]

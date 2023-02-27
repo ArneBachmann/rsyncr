@@ -1,7 +1,6 @@
-# coding=utf-8
-
-# Copyright (C) 2017-2022 Arne Bachmann. All rights reserved
+# Copyright (C) 2017-2023 Arne Bachmann. All rights reserved
 # This rsync wrapper script supports humans in detecting dangerous changes to a file tree synchronization and allows some degree of interactive inspection.
+# TODO files to update not shown in preview
 # TODO "moved" contains deleted - but uncertain?
 # TODO copying .git folders (or any dot-folders?) changes the owner and access rights! This leads to problems on consecutive syncs - add chmod? or use rsync option?
 
@@ -11,12 +10,11 @@ import functools, logging, os, subprocess, sys, textwrap
 assert sys.version_info >= (3, 7)  # version 3.6 was required in 2017 to ensure maximum roundtrip chances, but is end of live already in 2022
 from typing import cast, Any, Callable, Dict, Iterable, List, NamedTuple, Optional, Set, Tuple, TypeVar
 from typing_extensions import Final; T = TypeVar('T')
-from .distance import cygwinify, distance as measure
-from .help import help
+from .help import help_output
 
 
 # Parse program options
-if len(sys.argv) < 2 or '--help' in sys.argv or '-' in sys.argv or '-?' in sys.argv or '/?' in sys.argv: help()
+if len(sys.argv) < 2 or '--help' in sys.argv or '-' in sys.argv or '-?' in sys.argv or '/?' in sys.argv: help_output()
 add      = '--add'        in sys.argv or '-a' in sys.argv
 sync     = '--sync'       in sys.argv or '-s' in sys.argv
 delete   = '--del'        in sys.argv or '-d' in sys.argv
@@ -26,16 +24,20 @@ ask      = '--ask'        in sys.argv or '-i' in sys.argv
 flat     = '--flat'       in sys.argv or '-1' in sys.argv
 compress = '--compress'   in sys.argv or '-c' in sys.argv
 verbose  = '--verbose'    in sys.argv or '-v' in sys.argv
+verbose  = '--debug'      in sys.argv or '-v' in sys.argv or verbose
 checksum = '--checksum'   in sys.argv or '-C' in sys.argv
 backup   = '--backup'     in sys.argv
 override = '--force-copy' in sys.argv
 estimate = '--estimate'   in sys.argv
 force_dir= '--force-dir'  in sys.argv or '-f' in sys.argv
-cwdParent= file = rsyncPath = source = target = ""
+file:Optional[str] = ""
+cwdParent = rsyncPath = source = target = ""
 protocol = 0; rversion = (0, 0)
 
 logging.basicConfig(level=logging.DEBUG if verbose else logging.INFO, stream=sys.stderr, format="%(message)s")
 _log = logging.getLogger(); debug, info, warn, error = _log.debug, _log.info, _log.warning, _log.error
+
+from .distance import cygwinify, distance as measure
 
 
 # Settings
@@ -87,7 +89,7 @@ def parseLine(line:str) -> Optional[FileState]:
   newdir:bool = atts[:2] == "cd" and xall(lambda _: _ == "+", atts[2:])
   if state == "message" and atts[1:] == "deleting": state = "deleted"
   try: assert path.startswith(cwdParent + "/") or path == cwdParent
-  except: raise Exception(f"Wrong path prefix: {path} vs {cwdParent}")
+  except Exception as e: raise Exception(f"Wrong path prefix: {path} vs {cwdParent}") from e
   path = path[len(cwdParent):]
   return FileState(state, entry, change, sys.intern(path), newdir, sys.intern(os.path.basename(path)))
 
@@ -121,7 +123,7 @@ def constructCommand(simulate:bool) -> str:  # TODO -m prune empty dir chains fr
     )
 
 
-def main():
+def main() -> None:
   # Source handling
   global add, sync, delete, cwdParent, file, rsyncPath, source, target, protocol, version
   file = sys.argv[sys.argv.index('--file') + 1] if '--file' in sys.argv else None
@@ -194,9 +196,9 @@ def main():
     command:str = estimateDuration()
     debug(f"\nAnalyzing: {command}")
     lines:List[str] = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=sys.stderr).communicate()[0].decode(sys.stdout.encoding).replace("\r\n", "\n").split("\n")
-    line:str = [l for l in lines if l.startswith("Number of files:")][0]
+    line:str = [L for L in lines if L.startswith("Number of files:")][0]
     totalfiles:int = int(line.split("Number of files: ")[1].split(" (")[0].replace(",", ""))
-    line = [l for l in lines if l.startswith("Total file size:")][0]
+    line = [L for L in lines if L.startswith("Total file size:")][0]
     totalbytes:int = int(line.split("Total file size: ")[1].split(" bytes")[0].replace(",", ""))
     info(f"\nEstimated run time for {totalfiles} entries: %.1f (SSD) %.1f (HDD) %.1f (Ethernet) %.1f (USB 3.0)" % (
       totalbytes / (60 *  130 * MEBI),   # SSD
@@ -227,7 +229,7 @@ def main():
     potentialMoves = {k: v for k, v in potentialMoves.items() if k not in removes}
     modified:Set[str] = {entry.path for entry in entries if entry.type == "file" and entry.change and entry.path not in removes and entry.path not in potentialMoves}
     added:Set[str] = {entry.path for entry in entries if entry.type == "file" and entry.state in ("store", "changed") and entry.path and not xany(lambda a: entry.path in a, potentialMoves.values())}  # latter is a weak check
-    modified = [name for name in modified if name not in added]
+    modified = set([name for name in modified if name not in added])
     potentialMoveDirs:Dict[str,str] = {}
     if not add and '--skip-move' not in sys.argv and '--skip-moves' not in sys.argv:
       debug("Computing potential directory moves")  # HINT: a check if all removed files can be found in a new directory cannot be done, as we only that that a directory has been deleted, but nothing about its files
