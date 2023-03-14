@@ -1,14 +1,20 @@
 # Copyright (C) 2017-2023 Arne Bachmann. All rights reserved
 # TODO there is the difflib.get_close_matches() function in the stdlib
 
-import contextlib, itertools, logging, sys, time
+import contextlib, itertools, logging, pathlib, sys, time
+from appdirs import AppDirs  # for persistence of benchmark result
 from beartype.typing import cast, Dict, Generator, Iterator, List, Protocol, Set
 
+if '--test' in sys.argv: logging.basicConfig(level=logging.DEBUG, stream=sys.stderr, format="%(message)s")
 _log = logging.getLogger(); debug, info, warn, error = _log.debug, _log.info, _log.warning, _log.error
 
 
+config_dir:str = AppDirs("rsyncr", "AB").user_config_dir
+breakpoint()
+
+
 class DistanceMeasure(Protocol):
-  # returns a positive, non-normalized integer used for ordering - but corresponds with MAX_EDIT_DISTANCE
+  # returns a positive, non-normalized number used for ordering (might correspond with MAX_EDIT_DISTANCE)
   __name__: str
   def __call__(_, a:str, b:str) -> int|float: ...
 
@@ -42,8 +48,8 @@ def run_tests(func:DistanceMeasure) -> float:
   debug(f"Benchmark {func.__name__}")
   start:float = time.time()
   for i in range(1):
-    for a, b, c, d in itertools.product(range(ord('A'), ord('D') + 1), range(ord('A'), ord('D') + 1), range(ord('A'), ord('D') + 1), range(ord('A'), ord('D') + 1)):
-      for e, f, g, h in itertools.product(range(ord('A'), ord('D') + 1), range(ord('A'), ord('D') + 1), range(ord('A'), ord('D') + 1), range(ord('A'), ord('D') + 1)):
+    for a, b, c, d in itertools.product(range(ord('A'), ord('E') + 1), range(ord('A'), ord('E') + 1), range(ord('A'), ord('D') + 1), range(ord('A'), ord('D') + 1)):
+      for e, f, g, h in itertools.product(range(ord('A'), ord('E') + 1), range(ord('A'), ord('E') + 1), range(ord('A'), ord('D') + 1), range(ord('A'), ord('D') + 1)):
         x:str = chr(a) + chr(b) + chr(c) + chr(d)
         y:str = chr(e) + chr(f) + chr(g) + chr(h)
         func(x, y)
@@ -100,7 +106,7 @@ with probe_library("StringDist") as libs:
 # https://github.com/dhgutteridge/brew-distance  slow implementation
 with probe_library("brew_distance") as libs:
   from brew_distance import distance as _distance01  # type: ignore
-  _distance = lambda a, b: _distance01(a, b)[0]  # [1] contains operations  # type: ignore
+  _distance = lambda a, b: _distance01(a, b)[0]  # type: ignore  # noqa: E731  # [1] contains operations
   assert _distance("abc", "cbe") == 2  # type: ignore  # until bug has been fixed
   libs.send(_distance)
 
@@ -109,7 +115,7 @@ with probe_library("edit_distance") as libs:
   from edit_distance import SequenceMatcher as _distance1  # type: ignore
   _distance = lambda a, b: _distance1(a, b).distance()  # noqa: E731
   assert _distance("abc", "cbe") == 2  # type: ignore
-  libs.send(_distance1)
+  libs.send(_distance)
 
 # https://github.com/asottile/editdistance-s
 with probe_library("editdistance_s") as libs:
@@ -117,16 +123,22 @@ with probe_library("editdistance_s") as libs:
   assert _distance2("abc", "cbe") == 2
   libs.send(_distance2)
 
-# https://github.com/asottile/editdistance-s
 # https://pypi.python.org/pypi/editdistance/0.2
 with probe_library("editdistance") as libs:
   from editdistance import eval as _distance3  # type: ignore
   assert _distance3("abc", "cbe") == 2
-  libs.send(_distance3)
+  libs.send(lambda a, b: _distance3(a, b))
+
+
+stored_best:str = ''
+with contextlib.suppress(Exception): stored_best = (pathlib.Path(config_dir) / '.rsyncr.cfg').read_text()
 
 if FUNCS:
-  distance:DistanceMeasure = benchmark(FUNCS)
+  distance:DistanceMeasure = benchmark(FUNCS) if not stored_best else [func for func in FUNCS if func.__name__ == stored_best][0]
   info(f"Use {distance.__name__} library")
+  del FUNCS
+  if not stored_best:
+    with contextlib.suppress(Exception): import os; os.makedirs(config_dir); (pathlib.Path(config_dir) / '.rsyncr.cfg').write_text(distance.__name__)
 else:
   # simple distance measure fallback
   distance = cast(DistanceMeasure, lambda a, b: 0. if a == b else 1.)
