@@ -1,5 +1,6 @@
 # Copyright (C) 2017-2023 Arne Bachmann. All rights reserved
 # This rsync wrapper script supports humans in detecting dangerous changes to a file tree synchronization and allows some degree of interactive inspection.
+
 # TODO files to update not shown in preview
 # TODO "moved" contains deleted - but uncertain?
 # TODO copying .git folders (or any dot-folders?) changes the owner and access rights! This leads to problems on consecutive syncs - add chmod? or use rsync option?

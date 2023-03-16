@@ -10,7 +10,6 @@ _log = logging.getLogger(); debug, info, warn, error = _log.debug, _log.info, _l
 
 
 config_dir:str = AppDirs("rsyncr", "AB").user_config_dir
-breakpoint()
 
 
 class DistanceMeasure(Protocol):
