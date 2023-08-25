@@ -37,5 +37,6 @@ def help_output() -> None:
       --help       -h  Show this information
 
     Special options:
+      --benchmark       re-run the benchmark on distance measures, e.g., after installing a new library
       --with-checksums  corrupDetect compatibility: if set, .corrupdetect files are *not* ignored
   """); sys.exit(0)

@@ -1,5 +1,5 @@
 # Copyright (C) 2017-2023 Arne Bachmann. All rights reserved
-# TODO there is the difflib.get_close_matches() function in the stdlib
+# HINT: there is the difflib.get_close_matches() function in the stdlib
 
 import contextlib, itertools, logging, pathlib, sys, time
 from appdirs import AppDirs  # for persistence of benchmark result
@@ -46,7 +46,7 @@ def run_tests(func:DistanceMeasure) -> float:
   ''' Measure speed of the distance function. '''
   debug(f"Benchmark {func.__name__}")
   start:float = time.time()
-  for i in range(1):
+  for i in range(1):  # HINT range can be increased to adapt test speed
     for a, b, c, d in itertools.product(range(ord('A'), ord('E') + 1), range(ord('A'), ord('E') + 1), range(ord('A'), ord('D') + 1), range(ord('A'), ord('D') + 1)):
       for e, f, g, h in itertools.product(range(ord('A'), ord('E') + 1), range(ord('A'), ord('E') + 1), range(ord('A'), ord('D') + 1), range(ord('A'), ord('D') + 1)):
         x:str = chr(a) + chr(b) + chr(c) + chr(d)
@@ -56,12 +56,13 @@ def run_tests(func:DistanceMeasure) -> float:
 
 
 def benchmark(funcs:Set[DistanceMeasure]) -> DistanceMeasure:
-  ''' Automatic determination of fastest distance measure. TODO: persist setting '''
+  ''' Automatic determination of fastest distance measure. '''
   results:Dict[DistanceMeasure,float] = {func: run_tests(func) for func in funcs}
   return min([(duration, func) for func, duration in results.items()])[1]
 
 
 def probe(name) -> Generator[str|None,DistanceMeasure,None]:
+  ''' Check if the distance measure 'name' is available. '''
   debug(f"Probe {name}")
   func:DistanceMeasure = yield name
   func.__name__ = name
@@ -74,7 +75,7 @@ def probe(name) -> Generator[str|None,DistanceMeasure,None]:
 def probe_library(name:str) -> Iterator[Generator[str|None,DistanceMeasure,None]]:
   try:
     it = iter(probe(name))
-    for i, step in enumerate(it):  # yield None
+    for step in it:  # yield None
       if step: yield it  # ignore yield None
   except (ImportError, AssertionError) as e: warn(e)
 
@@ -129,14 +130,15 @@ with probe_library("editdistance") as libs:
   libs.send(lambda a, b: _distance3(a, b))
 
 
-stored_best:str = ''
-with contextlib.suppress(Exception): stored_best = (pathlib.Path(config_dir) / '.rsyncr.cfg').read_text()
+best_measures:str = ''
+with contextlib.suppress(Exception):
+  best_measures = (pathlib.Path(config_dir) / '.rsyncr.cfg').read_text() if '--benchmark' not in sys.argv else ''
 
 if FUNCS:
-  distance:DistanceMeasure = benchmark(FUNCS) if not stored_best else [func for func in FUNCS if func.__name__ == stored_best][0]
+  distance:DistanceMeasure = benchmark(FUNCS) if not best_measures else [func for func in FUNCS if func.__name__ == best_measures][0]
   info(f"Use {distance.__name__} library")
   del FUNCS
-  if not stored_best:
+  if not best_measures:
     with contextlib.suppress(Exception): import os; os.makedirs(config_dir); (pathlib.Path(config_dir) / '.rsyncr.cfg').write_text(distance.__name__)
 else:
   # simple distance measure fallback

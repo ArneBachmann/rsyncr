@@ -8,7 +8,7 @@
 from __future__ import annotations
 import time; time_start:float = time.time()
 import functools, logging, os, subprocess, sys, textwrap
-assert sys.version_info >= (3, 7)  # version 3.6 was required in 2017 to ensure maximum roundtrip chances, but is end of live already in 2022
+assert sys.version_info >= (3, 9)
 from typing import cast, Any, Callable, Dict, Iterable, List, NamedTuple, Optional, Set, Tuple, TypeVar
 from typing_extensions import Final; T = TypeVar('T')
 from .help import help_output
@@ -201,15 +201,17 @@ def main() -> None:
     totalfiles:int = int(line.split("Number of files: ")[1].split(" (")[0].replace(",", ""))
     line = [L for L in lines if L.startswith("Total file size:")][0]
     totalbytes:int = int(line.split("Total file size: ")[1].split(" bytes")[0].replace(",", ""))
-    info(f"\nEstimated run time for {totalfiles} entries: %.1f (SSD) %.1f (HDD) %.1f (Ethernet) %.1f (USB 3.0)" % (
-      totalbytes / (60 *  130 * MEBI),   # SSD
-      totalbytes / (60 *   60 * MEBI),   # HDD
-      totalbytes / (60 * 12.5 * MEBI),   # 100 Mbit/s
-      totalbytes / (60 *  0.4 * MEBI)))  # USB 3.0 TODO really?
+    info("\nEstimated run time for {} entries: {:.1f} (SSD) {:.1f} (HDD) {:.1f} (Ethernet) {:.1f} (USB 3.0)".format(
+        totalfiles
+      , totalbytes / (60 *  130 * MEBI)  # SSD
+      , totalbytes / (60 *   60 * MEBI)  # HDD
+      , totalbytes / (60 * 12.5 * MEBI)  # Ethernet 100 Mbit/s
+      , totalbytes / (60 *  0.4 * MEBI)  # USB 3.0 TODO really?
+      ))
     if not ask: input("Hit Enter to continue.")
 
   # Simulation rsync run
-  if not file and (simulate or not add):  # only simulate in multi-file mode. in add-only mode we need not check for conflicts
+  if not file and (simulate or (not add and not ask)):  # only simulate in multi-file mode. in add-only mode we need not check for conflicts
     command = constructCommand(simulate=True)
     debug(f"\nSimulating: {command}")
     lines = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=sys.stderr).communicate()[0].decode(sys.stdout.encoding).replace("\r\n", "\n").split("\n")  # TODO also parse line-wise instead of slurp
@@ -238,15 +240,15 @@ def main() -> None:
       potentialMoveDirs = {k: v for k, v in potentialMoveDirs.items() if v != ""}
 
     # User interaction
-    info("%-5s added files"   % (len(added) if added else "no"))
-    info("%-5s chngd files"   % (len(modified) if modified else "no"))
-    info("%-5s remvd entries" % (len(removes) if removes else "no"))
-    info("%-5s moved files (maybe)" % (len(potentialMoves) if potentialMoves else "no"))
-    info("%-5s Added dirs (including %d files)" % ((len(newdirs), sum([len(files) for files in newdirs.values()])) if newdirs else ("no", 0)))
-    info("%-5s Moved dirs (maybe) " % (len(potentialMoveDirs) if potentialMoveDirs else "no"))
+    info(f"{len(added) if added else 'no':-5s} added files")
+    info(f"{len(modified) if modified else 'no':-5s} chngd files")
+    info(f"{len(removes) if removes else 'no':-5s} remvd entries")
+    info(f"{len(potentialMoves) if potentialMoves else 'no':-5s} moved files (maybe)")
+    info(f"{(len(newdirs) if newdirs else 'no'):-5s} Added dirs (including {sum([len(files) for files in newdirs.values()]) if newdirs else 0:%d} files)")
+    info(f"{len(potentialMoveDirs) if potentialMoveDirs else 'no':-5s} Moved dirs (maybe)")
     if not (added or newdirs or modified or removes):
       warn("Nothing to do.")
-      debug("Finished after %.1f minutes." % ((time.time() - time_start) / 60.))
+      debug(f"Finished after {(time.time() - time_start) / 60.:.1f} minutes.")
       if not simulate and ask: input("Hit Enter to exit.")
       sys.exit(0)
     while ask:
@@ -279,7 +281,7 @@ def main() -> None:
     debug(f"\nExecuting: {command}")
     subprocess.Popen(command, shell=True, stdout=sys.stdout, stderr=sys.stderr).wait()
 
-  debug("Finished after %.1f minutes." % ((time.time() - time_start) / 60.))
+  debug(f"Finished after {(time.time() - time_start) / 60.:.1f} minutes.")
 
 
 if __name__ == '__main__': main()
