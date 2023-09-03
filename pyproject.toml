@@ -5,6 +5,7 @@ requires = [
 build-backend = "hatchling.build"
 
 [project]
+requires-python = ">=3.11"
 name = "rsyncr"
 version = "2023.1314.1340"  # version = (lt.tm_year, (10 + lt.tm_mon) * 100 + lt.tm_mday, (10 + lt.tm_hour) * 100 + lt.tm_min)
 description = "rsyncr - An enhanced rsync backup wrapper script"
@@ -37,6 +38,7 @@ classifiers = [
 ]
 dependencies = [
     "appdirs"
+  , "beartype"
   , "stringdist"
   , "typing_extensions"
   , "types-appdirs"  # dev only
