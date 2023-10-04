@@ -7,7 +7,7 @@ build-backend = "hatchling.build"
 [project]
 requires-python = ">=3.11"
 name = "rsyncr"
-version = "2023.1314.1340"  # version = (lt.tm_year, (10 + lt.tm_mon) * 100 + lt.tm_mday, (10 + lt.tm_hour) * 100 + lt.tm_min)
+version = "2023.2014.2056"  # version = (lt.tm_year, (10 + lt.tm_mon) * 100 + lt.tm_mday, (10 + lt.tm_hour) * 100 + lt.tm_min)
 description = "rsyncr - An enhanced rsync backup wrapper script"
 readme = "README.md"
 license = "GPL-3.0-or-later"  # GNU General Public License v3
@@ -30,10 +30,6 @@ classifiers = [
     "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
     "Operating System :: OS Independent",
     "Programming Language :: Python",
-    "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.8",
-    "Programming Language :: Python :: 3.9",
-    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
 ]
 dependencies = [

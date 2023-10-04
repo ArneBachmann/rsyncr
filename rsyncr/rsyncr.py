@@ -8,9 +8,9 @@
 from __future__ import annotations
 import time; time_start:float = time.time()
 import functools, logging, os, subprocess, sys, textwrap
-assert sys.version_info >= (3, 9)
+assert sys.version_info >= (3, 11)
 from typing import cast, Any, Callable, Dict, Iterable, List, NamedTuple, Optional, Set, Tuple, TypeVar
-from typing_extensions import Final; T = TypeVar('T')
+from typing_extensions import Final; T = TypeVar('T')  # Python 3.12: use [T]
 from .help import help_output
 
 
@@ -211,7 +211,7 @@ def main() -> None:
     if not ask: input("Hit Enter to continue.")
 
   # Simulation rsync run
-  if not file and (simulate or (not add and not ask)):  # only simulate in multi-file mode. in add-only mode we need not check for conflicts
+  if not file and ask or (simulate or not add):  # only simulate in multi-file mode. in add-only mode we need not check for conflicts
     command = constructCommand(simulate=True)
     debug(f"\nSimulating: {command}")
     lines = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=sys.stderr).communicate()[0].decode(sys.stdout.encoding).replace("\r\n", "\n").split("\n")  # TODO also parse line-wise instead of slurp
@@ -240,12 +240,12 @@ def main() -> None:
       potentialMoveDirs = {k: v for k, v in potentialMoveDirs.items() if v != ""}
 
     # User interaction
-    info(f"{len(added) if added else 'no':-5s} added files")
-    info(f"{len(modified) if modified else 'no':-5s} chngd files")
-    info(f"{len(removes) if removes else 'no':-5s} remvd entries")
-    info(f"{len(potentialMoves) if potentialMoves else 'no':-5s} moved files (maybe)")
-    info(f"{(len(newdirs) if newdirs else 'no'):-5s} Added dirs (including {sum([len(files) for files in newdirs.values()]) if newdirs else 0:%d} files)")
-    info(f"{len(potentialMoveDirs) if potentialMoveDirs else 'no':-5s} Moved dirs (maybe)")
+    info(f"{str(len(added)) if added else 'no':>5s} added files")
+    info(f"{str(len(modified)) if modified else 'no':>5s} chngd files")
+    info(f"{str(len(removes)) if removes else 'no':>5s} remvd entries")
+    info(f"{str(len(potentialMoves)) if potentialMoves else 'no':>5s} moved files (maybe)")
+    info(f"{str(len(newdirs)) if newdirs else 'no':>5s} Added dirs (including {sum([len(files) for files in newdirs.values()]) if newdirs else 0:d} files)")
+    info(f"{str(len(potentialMoveDirs)) if potentialMoveDirs else 'no':>5s} Moved dirs (maybe)")
     if not (added or newdirs or modified or removes):
       warn("Nothing to do.")
       debug(f"Finished after {(time.time() - time_start) / 60.:.1f} minutes.")
