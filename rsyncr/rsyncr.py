@@ -31,7 +31,7 @@ backup   = '--backup'     in sys.argv
 override = '--force-copy' in sys.argv
 estimate = '--estimate'   in sys.argv
 force_dir= '--force-dir'  in sys.argv or '-f' in sys.argv
-file:Optional[str] = ""
+file:Optional[str] = ""  # use for single file sync instead (recursive or single) folder
 cwdParent = rsyncPath = source = target = ""
 protocol = 0; rversion = (0, 0)
 
@@ -75,6 +75,7 @@ def parseLine(line:str) -> Optional[FileState]:
   >>> print(parseLine(">f+++++++++ 05 - Bulgarien/07/IMG_0682.JPG"))
   FileState(state='store', type='file', change=False, path='/rsyncr/05 - Bulgarien/07/IMG_0682.JPG', newdir=False, base='IMG_0682.JPG')
   '''
+  if line.startswith('skipping directory'): warn(line); return None
   if line.startswith('cannot delete non-empty directory'): warn(f'Folder remains (probably excluded): {line.split(":")[1]}'); return None  # this happens if a protected folder remains e.g. from DEXCLUDE
   if 'IO error' in line: print(line); return None  # error encountered -- skipping file deletion (during simulation!)
   atts:str  = line.split(" ")[0]  # until space between itemization info and path
@@ -98,29 +99,29 @@ def parseLine(line:str) -> Optional[FileState]:
 def estimateDuration() -> str:
   return f'{QUOTE}{rsyncPath}{QUOTE}' + \
      " -n --stats {rec}{addmode} '{source}' '{target}'".format(
-      rec="-r " if not flat and not file else "",
-      addmode="--ignore-existing " if add else ("-I " if override else "-u "),  # -I ignore-times (size only)
-      source=source,
-      target=target
+      rec="-r " if not flat and not file else ("-d " if not file else "")
+    , addmode="--ignore-existing " if add else ("-I " if override else "-u ")  # -I ignore-times (size only)
+    , source=source
+    , target=target
     )
 
 
 def constructCommand(simulate:bool) -> str:  # TODO -m prune empty dir chains from file list
   return f'{QUOTE}{rsyncPath}{QUOTE}' + \
        " {sim}{rec}{addmode}{delmode}{comp}{part}{bacmode}{units}{check} -i -t --no-i-r {exclude} '{source}' '{target}'".format(  # -t keep times, -i itemize
-      sim="-n " if simulate else ("--info=progress2 -h " if protocol >= 31 or rversion >= (3, 1) else ""),
-      rec="-r " if not flat and not file else "",  # TODO allow flat with --delete
-      addmode="--ignore-existing " if add else ("--existing " if delete else ("-I " if override else "-u ")),  # --ignore-existing only copy additional files (vs. --existing: don't add new files) -u only copy if younger -I ignore times
-      delmode="--delete-after --prune-empty-dirs --delete-excluded " if sync or delete else "",
-      comp="-S -z --compress-level=6 " if compress and not simulate else "",
-      part="-P " if file else "",  # -P = --partial --progress
-      bacmode=("-b --suffix='~~' " if backup else ""),
-      units=("" if simulate else "-hh --stats "),  # using SI-units
-      check="-c" if checksum else "",
-      exclude=" ".join(f"--exclude='{fe}' --filter='P {fe}' "   for fe in FEXCLUDE) +
-              " ".join(f"--exclude='{de}/' --filter='P {de}/' " for de in DEXCLUDE),  # P = exclude from deletion, meaning not copied, but also not removed it exists only in target.
-      source=source,
-      target=target
+      sim="-n " if simulate else ("--info=progress2 -h " if protocol >= 31 or rversion >= (3, 1) else "")
+    , rec="-r " if not flat and not file else ("-d " if not file else "")
+    , addmode="--ignore-existing " if add else ("--existing " if delete else ("-I " if override else "-u "))  # --ignore-existing only copy additional files (vs. --existing: don't add new files) -u only copy if younger -I ignore times
+    , delmode="--delete-after --prune-empty-dirs --delete-excluded " if (sync or delete) and not flat else ""
+    , comp="-S -z --compress-level=6 " if compress and not simulate else ""
+    , part="-P " if file else ""  # -P = --partial --progress
+    , bacmode=("-b --suffix='~~' " if backup else "")
+    , units=("" if simulate else "-hh --stats ")  # using SI-units
+    , check="-c" if checksum else ""
+    , exclude=" ".join(f"--exclude='{fe}' --filter='P {fe}' "   for fe in FEXCLUDE)
+            + " ".join(f"--exclude='{de}/' --filter='P {de}/' " for de in DEXCLUDE)  # P = exclude from deletion, meaning not copied, but also not removed it exists only in target.
+    , source=source
+    , target=target
     )
 
 

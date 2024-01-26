@@ -139,7 +139,7 @@ if FUNCS:
   info(f"Use {distance.__name__} library")
   del FUNCS
   if not best_measures:
-    with contextlib.suppress(Exception): import os; os.makedirs(config_dir); (pathlib.Path(config_dir) / '.rsyncr.cfg').write_text(distance.__name__)
+    with contextlib.suppress(Exception): import os; os.makedirs(config_dir, exist_ok=True); (pathlib.Path(config_dir) / '.rsyncr.cfg').write_text(distance.__name__)
 else:
   # simple distance measure fallback
   distance = cast(DistanceMeasure, lambda a, b: 0. if a == b else 1.)

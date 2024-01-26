@@ -1,4 +1,4 @@
-# Copyright (C) 2017-2023 Arne Bachmann. All rights reserved
+# Copyright (C) 2017-2024 Arne Bachmann. All rights reserved
 
 import sys
 
