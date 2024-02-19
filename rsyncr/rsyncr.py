@@ -12,9 +12,9 @@
 from __future__ import annotations
 import time; time_start:float = time.time()
 import functools, logging, os, subprocess, sys, textwrap
-assert sys.version_info >= (3, 7)  # version 3.6 was required in 2017 to ensure maximum roundtrip chances, but is end of live already in 2022
+assert sys.version_info >= (3, 11)
 from typing import cast, Any, Callable, Dict, Iterable, List, NamedTuple, Optional, Set, Tuple, TypeVar
-from typing_extensions import Final; T = TypeVar('T')
+from typing_extensions import Final; T = TypeVar('T')  # Python 3.12: use [T]
 from .help import help_output
 
 
@@ -35,7 +35,7 @@ backup   = '--backup'     in sys.argv
 override = '--force-copy' in sys.argv
 estimate = '--estimate'   in sys.argv
 force_dir= '--force-dir'  in sys.argv or '-f' in sys.argv
-file:Optional[str] = ""
+file:Optional[str] = ""  # use for single file sync instead (recursive or single) folder
 cwdParent = rsyncPath = source = target = ""
 protocol = 0; rversion = (0, 0)
 
@@ -79,6 +79,7 @@ def parseLine(line:str) -> Optional[FileState]:
   >>> print(parseLine(">f+++++++++ 05 - Bulgarien/07/IMG_0682.JPG"))
   FileState(state='store', type='file', change=False, path='/rsyncr/05 - Bulgarien/07/IMG_0682.JPG', newdir=False, base='IMG_0682.JPG')
   '''
+  if line.startswith('skipping directory'): warn(line); return None
   if line.startswith('cannot delete non-empty directory'): warn(f'Folder remains (probably excluded): {line.split(":")[1]}'); return None  # this happens if a protected folder remains e.g. from DEXCLUDE
   if 'IO error' in line: print(line); return None  # error encountered -- skipping file deletion (during simulation!)
   atts:str  = line.split(" ")[0]  # until space between itemization info and path
@@ -102,29 +103,29 @@ def parseLine(line:str) -> Optional[FileState]:
 def estimateDuration() -> str:
   return f'{QUOTE}{rsyncPath}{QUOTE}' + \
      " -n --stats {rec}{addmode} '{source}' '{target}'".format(
-      rec="-r " if not flat and not file else "",
-      addmode="--ignore-existing " if add else ("-I " if override else "-u "),  # -I ignore-times (size only)
-      source=source,
-      target=target
+      rec="-r " if not flat and not file else ("-d " if not file else "")
+    , addmode="--ignore-existing " if add else ("-I " if override else "-u ")  # -I ignore-times (size only)
+    , source=source
+    , target=target
     )
 
 
 def constructCommand(simulate:bool) -> str:  # TODO -m prune empty dir chains from file list
   return f'{QUOTE}{rsyncPath}{QUOTE}' + \
        " {sim}{rec}{addmode}{delmode}{comp}{part}{bacmode}{units}{check} -i -t --no-i-r {exclude} '{source}' '{target}'".format(  # -t keep times, -i itemize
-      sim="-n " if simulate else ("--info=progress2 -h " if protocol >= 31 or rversion >= (3, 1) else ""),
-      rec="-r " if not flat and not file else "",  # TODO allow flat with --delete
-      addmode="--ignore-existing " if add else ("--existing " if delete else ("-I " if override else "-u ")),  # --ignore-existing only copy additional files (vs. --existing: don't add new files) -u only copy if younger -I ignore times
-      delmode="--delete-after --prune-empty-dirs --delete-excluded " if sync or delete else "",
-      comp="-S -z --compress-level=6 " if compress and not simulate else "",
-      part="-P " if file else "",  # -P = --partial --progress
-      bacmode=("-b --suffix='~~' " if backup else ""),
-      units=("" if simulate else "-hh --stats "),  # using SI-units
-      check="-c" if checksum else "",
-      exclude=" ".join(f"--exclude='{fe}' --filter='P {fe}' "   for fe in FEXCLUDE) +
-              " ".join(f"--exclude='{de}/' --filter='P {de}/' " for de in DEXCLUDE),  # P = exclude from deletion, meaning not copied, but also not removed it exists only in target.
-      source=source,
-      target=target
+      sim="-n " if simulate else ("--info=progress2 -h " if protocol >= 31 or rversion >= (3, 1) else "")
+    , rec="-r " if not flat and not file else ("-d " if not file else "")
+    , addmode="--ignore-existing " if add else ("--existing " if delete else ("-I " if override else "-u "))  # --ignore-existing only copy additional files (vs. --existing: don't add new files) -u only copy if younger -I ignore times
+    , delmode="--delete-after --prune-empty-dirs --delete-excluded " if (sync or delete) and not flat else ""
+    , comp="-S -z --compress-level=6 " if compress and not simulate else ""
+    , part="-P " if file else ""  # -P = --partial --progress
+    , bacmode=("-b --suffix='~~' " if backup else "")
+    , units=("" if simulate else "-hh --stats ")  # using SI-units
+    , check="-c" if checksum else ""
+    , exclude=" ".join(f"--exclude='{fe}' --filter='P {fe}' "   for fe in FEXCLUDE)
+            + " ".join(f"--exclude='{de}/' --filter='P {de}/' " for de in DEXCLUDE)  # P = exclude from deletion, meaning not copied, but also not removed it exists only in target.
+    , source=source
+    , target=target
     )
 
 
@@ -205,15 +206,17 @@ def main() -> None:
     totalfiles:int = int(line.split("Number of files: ")[1].split(" (")[0].replace(",", ""))
     line = [L for L in lines if L.startswith("Total file size:")][0]
     totalbytes:int = int(line.split("Total file size: ")[1].split(" bytes")[0].replace(",", ""))
-    info(f"\nEstimated run time for {totalfiles} entries: %.1f (SSD) %.1f (HDD) %.1f (Ethernet) %.1f (USB 3.0)" % (
-      totalbytes / (60 *  130 * MEBI),   # SSD
-      totalbytes / (60 *   60 * MEBI),   # HDD
-      totalbytes / (60 * 12.5 * MEBI),   # 100 Mbit/s
-      totalbytes / (60 *  0.4 * MEBI)))  # USB 3.0 TODO really?
+    info("\nEstimated run time for {} entries: {:.1f} (SSD) {:.1f} (HDD) {:.1f} (Ethernet) {:.1f} (USB 3.0)".format(
+        totalfiles
+      , totalbytes / (60 *  130 * MEBI)  # SSD
+      , totalbytes / (60 *   60 * MEBI)  # HDD
+      , totalbytes / (60 * 12.5 * MEBI)  # Ethernet 100 Mbit/s
+      , totalbytes / (60 *  0.4 * MEBI)  # USB 3.0 TODO really?
+      ))
     if not ask: input("Hit Enter to continue.")
 
   # Simulation rsync run
-  if not file and (simulate or not add):  # only simulate in multi-file mode. in add-only mode we need not check for conflicts
+  if not file and ask or (simulate or not add):  # only simulate in multi-file mode. in add-only mode we need not check for conflicts
     command = constructCommand(simulate=True)
     debug(f"\nSimulating: {command}")
     lines = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=sys.stderr).communicate()[0].decode(sys.stdout.encoding).replace("\r\n", "\n").split("\n")  # TODO also parse line-wise instead of slurp
@@ -242,15 +245,15 @@ def main() -> None:
       potentialMoveDirs = {k: v for k, v in potentialMoveDirs.items() if v != ""}
 
     # User interaction
-    info("%-5s added files"   % (len(added) if added else "no"))
-    info("%-5s chngd files"   % (len(modified) if modified else "no"))
-    info("%-5s remvd entries" % (len(removes) if removes else "no"))
-    info("%-5s moved files (maybe)" % (len(potentialMoves) if potentialMoves else "no"))
-    info("%-5s Added dirs (including %d files)" % ((len(newdirs), sum([len(files) for files in newdirs.values()])) if newdirs else ("no", 0)))
-    info("%-5s Moved dirs (maybe) " % (len(potentialMoveDirs) if potentialMoveDirs else "no"))
+    info(f"{str(len(added)) if added else 'no':>5s} added files")
+    info(f"{str(len(modified)) if modified else 'no':>5s} chngd files")
+    info(f"{str(len(removes)) if removes else 'no':>5s} remvd entries")
+    info(f"{str(len(potentialMoves)) if potentialMoves else 'no':>5s} moved files (maybe)")
+    info(f"{str(len(newdirs)) if newdirs else 'no':>5s} Added dirs (including {sum([len(files) for files in newdirs.values()]) if newdirs else 0:d} files)")
+    info(f"{str(len(potentialMoveDirs)) if potentialMoveDirs else 'no':>5s} Moved dirs (maybe)")
     if not (added or newdirs or modified or removes):
       warn("Nothing to do.")
-      debug("Finished after %.1f minutes." % ((time.time() - time_start) / 60.))
+      debug(f"Finished after {(time.time() - time_start) / 60.:.1f} minutes.")
       if not simulate and ask: input("Hit Enter to exit.")
       sys.exit(0)
     while ask:
@@ -283,7 +286,7 @@ def main() -> None:
     debug(f"\nExecuting: {command}")
     subprocess.Popen(command, shell=True, stdout=sys.stdout, stderr=sys.stderr).wait()
 
-  debug("Finished after %.1f minutes." % ((time.time() - time_start) / 60.))
+  debug(f"Finished after {(time.time() - time_start) / 60.:.1f} minutes.")
 
 
 if __name__ == '__main__': main()

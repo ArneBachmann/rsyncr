@@ -1,21 +1,21 @@
-# Copyright (C) 2017-2023 Arne Bachmann. All rights reserved
+# Copyright (C) 2017-2024 Arne Bachmann. All rights reserved
 
 import sys
 
 
 def help_output() -> None:
   print(r"""rsyncr  (C) Arne Bachmann 2017-2023
-    This rsync-wrapper simplifies backing up the current directory tree.
+    This rsync wrapper simplifies backing up the current directory tree.
 
     Syntax:  rsyncr <target-path> [options]
 
-    target-path is either a local folder /path or Drive:\path  or a remote path [rsync://][user@]host:/path
-      using Drive:    -  use the drive's current folder (Windows only)
-      using Drive:\~  -  use full source path on target drive
+    <target-path>  - either a local folder /path or Drive:\path  or a remote path [rsync://][user@]host:/path
+        Drive:     - use that drive's current folder (Windows only)
+        Drive:\~   - use same path on that target drive
 
     Copy mode options (default: update):
-      --add                -a  Immediately copy only additional files (otherwise add, and update modified)
-      --sync               -s  Remove files in target if removed in source, including empty folders
+      --add                -a  Immediately copy only additional files (otherwise add + update modified)
+      --sync               -s  Remove files in target that were removed in source, also empty folders
       --del                -d  Only remove files, do not add nor update
       --simulate           -n  Don't actually sync, stop after simulation
       --estimate               Estimate copy speed
@@ -37,5 +37,7 @@ def help_output() -> None:
       --help       -h  Show this information
 
     Special options:
+      --benchmark       re-run the benchmark on distance measures, e.g., after installing a new library
       --with-checksums  corrupDetect compatibility: if set, .corrupdetect files are *not* ignored
-  """); sys.exit(0)
+    """)
+  sys.exit(0)
