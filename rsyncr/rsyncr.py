@@ -1,9 +1,13 @@
-# Copyright (C) 2017-2023 Arne Bachmann. All rights reserved
+# Copyright (C) 2017-2024 Arne Bachmann. All rights reserved
 # This rsync wrapper script supports humans in detecting dangerous changes to a file tree synchronization and allows some degree of interactive inspection.
 
+# TODO compute size to transfer
+# TODO estimated time unit? m/s
+# TODO give hint that we need Rsync and maybe cygwin on the path
 # TODO files to update not shown in preview
 # TODO "moved" contains deleted - but uncertain?
 # TODO copying .git folders (or any dot-folders?) changes the owner and access rights! This leads to problems on consecutive syncs - add chmod? or use rsync option?
+# TODO https://github.com/basnijholt/rsync-time-machine.py
 
 from __future__ import annotations
 import time; time_start:float = time.time()

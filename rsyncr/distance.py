@@ -1,5 +1,5 @@
-# Copyright (C) 2017-2023 Arne Bachmann. All rights reserved
-# TODO there is the difflib.get_close_matches() function in the stdlib
+# Copyright (C) 2017-2024 Arne Bachmann. All rights reserved
+# HINT there is the difflib.get_close_matches() function in the stdlib
 
 import contextlib, itertools, logging, pathlib, sys, time
 from appdirs import AppDirs  # for persistence of benchmark result
@@ -81,6 +81,7 @@ def probe_library(name:str) -> Iterator[Generator[str|None,DistanceMeasure,None]
 
 _distance:DistanceMeasure
 # https://github.com/seatgeek/fuzzywuzzy (+ https://github.com/ztane/python-Levenshtein/) TODO avoid this try chain if --no-move
+# TODO now called thefuzz (prefer it with a precedence value or order?)
 with probe_library("fuzzywuzzy") as libs:
   from fuzzywuzzy import fuzz as _fuzz  # type: ignore
   _distance = lambda a, b: (100 - _fuzz.ratio(a, b)) / 20  # noqa: E731  # similarity score 0..100
@@ -133,7 +134,7 @@ stored_best:str = ''
 with contextlib.suppress(Exception): stored_best = (pathlib.Path(config_dir) / '.rsyncr.cfg').read_text()
 
 if FUNCS:
-  distance:DistanceMeasure = benchmark(FUNCS) if not stored_best else [func for func in FUNCS if func.__name__ == stored_best][0]
+  distance:DistanceMeasure = benchmark(FUNCS) if not stored_best else [func for func in FUNCS if func.__name__ == stored_best][0]  # TODO if persisted is not found, do benchmark
   info(f"Use {distance.__name__} library")
   del FUNCS
   if not stored_best:
