@@ -1,10 +1,8 @@
 # Copyright (C) 2017-2024 Arne Bachmann. All rights reserved
 
-import sys
-
 
 def help_output() -> None:
-  print(r"""rsyncr  (C) Arne Bachmann 2017-2023
+  print(r"""rsyncr  (C) Arne Bachmann 2017-2024
     This rsync wrapper simplifies backing up the current directory tree.
 
     Syntax:  rsyncr <target-path> [options]
@@ -40,4 +38,4 @@ def help_output() -> None:
       --benchmark       re-run the benchmark on distance measures, e.g., after installing a new library
       --with-checksums  corrupDetect compatibility: if set, .corrupdetect files are *not* ignored
     """)
-  sys.exit(0)
+  import sys; sys.exit(0)
