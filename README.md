@@ -29,7 +29,7 @@ rsyncr <target-path> [options]
 with options:
 
 ```text
-rsyncr  (C) Arne Bachmann 2017-2022
+rsyncr  (C) Arne Bachmann 2017-2024
     This rsync-wrapper simplifies backing up the current directory tree.
 
     Syntax:  rsyncr <target-path> [options]
@@ -65,6 +65,15 @@ rsyncr  (C) Arne Bachmann 2017-2022
       --with-checksums  corrupDetect compatibility: if set, .corrupdetect files are not ignored
 ```
 
+
+## Build process
+
+1. Update the version in `pyproject.toml`
+
+```bash
+hatch clean && hatch build -t wheel
+hatch publish dist\*.whl
+```
 
 ## rsync details
 rsync status output explanation:
