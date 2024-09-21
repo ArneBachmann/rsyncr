@@ -188,7 +188,11 @@ def main() -> None:
     info(f"Target: {target}")
 
   # Determine total file size
-  output:str = subprocess.Popen(f"{QUOTE}{rsyncPath}{QUOTE} --version", shell=True, stdout=subprocess.PIPE, stderr=sys.stderr).communicate()[0].decode(sys.stdout.encoding).replace("\r\n", "\n").split("\n")[0]
+  try:
+    output:str = (result := subprocess.Popen(f"{QUOTE}{rsyncPath}{QUOTE} --version", shell=True, stdout=subprocess.PIPE, stderr=sys.stderr).communicate()[0]).decode(sys.stdout.encoding).replace("\r\n", "\n").split("\n")[0]
+  except:
+    import chardet
+    output = result.decode(chardet.detect(result)['encoding']).replace("\r\n", "\n").split("\n")[0]
   protocol = int(output.split("protocol version ")[1])
   assert output.startswith("rsync"), f"Cannot determine rsync version: {output}"  # e.g. rsync  version 3.0.4  protocol version 30)
   rversion = cast(Tuple[int,int], tuple([int(_) for _ in output.split("version ")[1].split(" ")[0].split(".")[:2]]))
@@ -197,7 +201,11 @@ def main() -> None:
   if estimate:
     command:str = estimateDuration()
     debug(f"\nAnalyzing: {command}")
-    lines:List[str] = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=sys.stderr).communicate()[0].decode(sys.stdout.encoding).replace("\r\n", "\n").split("\n")
+    try:
+      lines:List[str] = (result := subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=sys.stderr).communicate()[0]).decode(sys.stdout.encoding).replace("\r\n", "\n").split("\n")
+    except:
+      import chardet
+      lines = result.decode(chardet.detect(result)['encoding']).replace("\r\n", "\n").split("\n")
     line:str = [L for L in lines if L.startswith("Number of files:")][0]
     totalfiles:int = int(line.split("Number of files: ")[1].split(" (")[0].replace(",", ""))
     line = [L for L in lines if L.startswith("Total file size:")][0]
@@ -215,7 +223,11 @@ def main() -> None:
   if not file and ask or (simulate or not add):  # only simulate in multi-file mode. in add-only mode we need not check for conflicts
     command = constructCommand(simulate=True)
     debug(f"\nSimulating: {command}")
-    lines = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=sys.stderr).communicate()[0].decode(sys.stdout.encoding).replace("\r\n", "\n").split("\n")  # TODO also parse line-wise instead of slurp
+    try:
+      lines = (result := subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=sys.stderr).communicate()[0]).decode(sys.stdout.encoding).replace("\r\n", "\n").split("\n")  # TODO also parse line-wise instead of slurp
+    except:
+      import chardet
+      lines = result.decode(chardet.detect(result)['encoding']).replace("\r\n", "\n").split("\n")  # TODO also parse line-wise instead of slurp
     entrie_:List[Optional[FileState]] = [parseLine(line) for line in lines if line.strip()]  # parse itemized information
     entries:List[FileState] = [entry for entry in entrie_ if entry and entry.path]  # filter errors,throw out all parent dirs (TODO might require makedirs())
 

@@ -138,8 +138,8 @@ if FUNCS:
   try:
     distance:DistanceMeasure = benchmark(FUNCS) if not best_measures else [func for func in FUNCS if func.__name__ == best_measures][0]
     info(f"Use {distance.__name__} library")
-    del FUNCS
-  except IndexError: FUNCS = None  # configured name not in the available methods, e.g. when installed via pipx without distance libraries
+    FUNCS.clear()
+  except IndexError: FUNCS.clear()  # configured name not in the available methods, e.g. when installed via pipx without distance libraries
 if not best_measures or not FUNCS:
   with contextlib.suppress(Exception): import os; os.makedirs(config_dir, exist_ok=True); (pathlib.Path(config_dir) / '.rsyncr.cfg').write_text(distance.__name__)
 if not FUNCS:

@@ -35,6 +35,7 @@ classifiers = [
 dependencies = [
     "appdirs"
   , "beartype"
+  , "chardet"
   , "stringdist"
   , "typing_extensions"
   , "types-appdirs"  # dev only
