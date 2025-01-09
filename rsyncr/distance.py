@@ -1,4 +1,4 @@
-# Copyright (C) 2017-2024 Arne Bachmann. All rights reserved
+# Copyright (C) 2017-2025 Arne Bachmann. All rights reserved
 # HINT: there is the difflib.get_close_matches() function in the stdlib
 
 import contextlib, itertools, logging, pathlib, sys, time
@@ -136,14 +136,18 @@ with contextlib.suppress(Exception):
   best_measures = (pathlib.Path(config_dir) / '.rsyncr.cfg').read_text() if '--benchmark' not in sys.argv else ''
 
 if FUNCS:
-  distance:DistanceMeasure = benchmark(FUNCS) if not best_measures else [func for func in FUNCS if func.__name__ == best_measures][0]  # TODO if persisted is not found, do benchmark
-  info(f"Use {distance.__name__} library")
-  del FUNCS
-  if not best_measures:
+  try:
+    distance:DistanceMeasure = benchmark(FUNCS) if not best_measures else [func for func in FUNCS if func.__name__ == best_measures][0]  # TODO if persisted is not found, do benchmark
+    info(f"Use {distance.__name__} library")
+  except IndexError: FUNCS.clear()  # configured name not in the available methods, e.g. when installed via pipx without distance libraries
+  if not best_measures or not FUNCS:
     with contextlib.suppress(Exception): import os; os.makedirs(config_dir, exist_ok=True); (pathlib.Path(config_dir) / '.rsyncr.cfg').write_text(distance.__name__)
-else:
+if not FUNCS:
   # simple distance measure fallback
   distance = cast(DistanceMeasure, lambda a, b: 0. if a == b else 1.)
   assert distance("abc", "cbe") == 1
   distance.__name__ = "simple comparison"
   warn("Fall back to simple comparison")
+
+
+if __name__ == '__main__': print(distance)

@@ -7,7 +7,7 @@ build-backend = "hatchling.build"
 [project]
 requires-python = ">=3.11"
 name = "rsyncr"
-version = "2023.2014.2056"  # version = (lt.tm_year, (10 + lt.tm_mon) * 100 + lt.tm_mday, (10 + lt.tm_hour) * 100 + lt.tm_min)
+version = "2024.1921.2416"  # version = (lt.tm_year, (10 + lt.tm_mon) * 100 + lt.tm_mday, (10 + lt.tm_hour) * 100 + lt.tm_min)
 description = "rsyncr - An enhanced rsync backup wrapper script"
 readme = "README.md"
 license = "GPL-3.0-or-later"  # GNU General Public License v3
@@ -35,10 +35,17 @@ classifiers = [
 dependencies = [
     "appdirs"
   , "beartype"
+  , "chardet"
   , "stringdist"
-  , "typing_extensions"
-  , "types-appdirs"  # dev only
+  , "brew_distance"
+  , "edit_distance"
 ]
+
+[project.optional-dependencies]
+dev = [
+    "typing_extensions"
+  , "types-appdirs"
+  ]
 
 [project.scripts]
 rsyncr = "rsyncr.rsyncr:main"
