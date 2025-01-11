@@ -1,6 +1,7 @@
 # Copyright (C) 2017-2025 Arne Bachmann. All rights reserved
 # This rsync wrapper script supports humans in detecting dangerous changes to a file tree synchronization and allows some degree of interactive inspection.
 
+# TODO allow specification of exclude patterns
 # TODO compute size to transfer (but there is already estimate flag?)
 # TODO estimated time unit? m/s
 # TODO give hint that we need Rsync and maybe cygwin on the path
@@ -51,7 +52,7 @@ MAX_EDIT_DISTANCE = 5  # insertions/deletions/replacements (and also moves for d
 MEBI:int          = 1024 << 10
 QUOTE:str = '"' if sys.platform == "win32" else ""
 FEXCLUDE:List[str] = ['*~~'] + (['.corrupdetect'] if '--with-checksums' not in sys.argv else [])  # ~~to avoid further copying of previous backups
-DEXCLUDE:List[str] = ['.redundir', '.imagesubsort_cache', '.imagesubsort_trash', '$RECYCLE.BIN', 'System Volume Information', 'Recovery', 'catalog Previews.lrdata']
+DEXCLUDE:List[str] = ['.git', '.svn', '.redundir', '.imagesubsort_cache', '.imagesubsort_trash', '$RECYCLE.BIN', 'System Volume Information', 'Recovery', 'catalog Previews.lrdata', '__pycache__']
 DELS:Set[str] = {"del", "rem"}
 
 

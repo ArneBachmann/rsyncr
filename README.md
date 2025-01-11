@@ -73,6 +73,10 @@ rsyncr  (C) Arne Bachmann 2017-2024
 ```bash
 hatch clean && hatch build -t wheel
 hatch publish dist\*.whl
+
+or better:
+uv build
+uv publish dist\*.whl
 ```
 
 ## rsync details
