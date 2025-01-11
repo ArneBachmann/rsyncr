@@ -1,3 +1,1 @@
-from rsyncr.rsyncr import main
-
-main()
+from rsyncr.rsyncr import main; main()

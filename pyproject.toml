@@ -7,7 +7,7 @@ build-backend = "hatchling.build"
 [project]
 requires-python = ">=3.11"
 name = "rsyncr"
-version = "2024.1921.2416"  # version = (lt.tm_year, (10 + lt.tm_mon) * 100 + lt.tm_mday, (10 + lt.tm_hour) * 100 + lt.tm_min)
+version = "2025.1121.2115"  # version = (lt.tm_year, (10 + lt.tm_mon) * 100 + lt.tm_mday, (10 + lt.tm_hour) * 100 + lt.tm_min)
 description = "rsyncr - An enhanced rsync backup wrapper script"
 readme = "README.md"
 license = "GPL-3.0-or-later"  # GNU General Public License v3
@@ -15,22 +15,22 @@ authors = [
     { name = "Arne Bachmann", email = "ArneBachmann@users.noreply.github.com" },
 ]
 keywords = [
-    "UI",
-    "backup",
-    "feedback",
-    "interface",
-    "rsync",
-    "safety",
-    "wrapper",
+    "UI"
+  , "backup"
+  , "feedback"
+  ,"interface"
+  , "rsync"
+  ,"safety"
+  ,"wrapper"
 ]
 classifiers = [
-    "Development Status :: 5 - Production/Stable",
-    "Intended Audience :: Science/Research",
-    "Intended Audience :: System Administrators",
-    "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
-    "Operating System :: OS Independent",
-    "Programming Language :: Python",
-    "Programming Language :: Python :: 3.11",
+    "Development Status :: 5 - Production/Stable"
+  , "Intended Audience :: Science/Research"
+  , "Intended Audience :: System Administrators"
+  , "License :: OSI Approved :: GNU General Public License v3 (GPLv3)"
+  , "Operating System :: OS Independent"
+  , "Programming Language :: Python"
+  , "Programming Language :: Python :: 3.11"
 ]
 dependencies = [
     "appdirs"
@@ -39,12 +39,12 @@ dependencies = [
   , "stringdist"
   , "brew_distance"
   , "edit_distance"
+  , "typing_extensions"
 ]
 
 [project.optional-dependencies]
 dev = [
-    "typing_extensions"
-  , "types-appdirs"
+    "types-appdirs"
   ]
 
 [project.scripts]

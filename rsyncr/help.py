@@ -1,8 +1,8 @@
-# Copyright (C) 2017-2024 Arne Bachmann. All rights reserved
+# Copyright (C) 2017-2025 Arne Bachmann. All rights reserved
 
 
 def help_output() -> None:
-  print(r"""rsyncr  (C) Arne Bachmann 2017-2024
+  print(r"""rsyncr  (C) Arne Bachmann 2017-2025
     This rsync wrapper simplifies backing up the current directory tree.
 
     Syntax:  rsyncr <target-path> [options]

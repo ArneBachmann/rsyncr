@@ -1,7 +1,7 @@
-# Copyright (C) 2017-2024 Arne Bachmann. All rights reserved
+# Copyright (C) 2017-2025 Arne Bachmann. All rights reserved
 # This rsync wrapper script supports humans in detecting dangerous changes to a file tree synchronization and allows some degree of interactive inspection.
 
-# TODO compute size to transfer
+# TODO compute size to transfer (but there is already estimate flag?)
 # TODO estimated time unit? m/s
 # TODO give hint that we need Rsync and maybe cygwin on the path
 # TODO files to update not shown in preview
